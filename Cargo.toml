@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/loqui-g2p",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/atlabs/loqui"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# The G2P forward pass is ~200k multiply-adds per decoded phoneme. Debug
+# builds make `cargo test` take seconds per word; this keeps the numeric
+# crates optimised while the rest of the tree stays fast to rebuild.
+[profile.dev.package.loqui-g2p]
+opt-level = 3
+
+[profile.dev.package.misaki-rs]
+opt-level = 3
