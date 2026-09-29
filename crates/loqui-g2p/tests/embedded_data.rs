@@ -1,5 +1,7 @@
-//! The embedded model and lexicons must be byte-for-byte the upstream
-//! releases named in NOTICE. A silent swap would change every voice.
+//! The embedded models, lexicons and tokenizer rules must be byte-for-byte
+//! the upstream releases named in NOTICE. A silent swap would change every
+//! voice. The tagger weights are loqui's own and are retrained on purpose,
+//! so they are not pinned here.
 
 use sha2::{Digest, Sha256};
 
@@ -9,7 +11,7 @@ fn sha256(bytes: &[u8]) -> String {
 
 #[test]
 fn embedded_files_match_their_upstream_releases() {
-    let pinned: [(&str, &[u8], &str); 6] = [
+    let pinned: [(&str, &[u8], &str); 7] = [
         ("g2p-en-us.safetensors", include_bytes!("../data/g2p-en-us.safetensors"),
          "dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5"),
         ("g2p-en-gb.safetensors", include_bytes!("../data/g2p-en-gb.safetensors"),
@@ -18,6 +20,9 @@ fn embedded_files_match_their_upstream_releases() {
         ("misaki-us_silver.json", include_bytes!("../data/misaki-us_silver.json"), US_SILVER),
         ("misaki-gb_gold.json", include_bytes!("../data/misaki-gb_gold.json"), GB_GOLD),
         ("misaki-gb_silver.json", include_bytes!("../data/misaki-gb_silver.json"), GB_SILVER),
+        // spaCy 3.8.16, exported by tools/parity/spacy_export.py.
+        ("spacy-en-tokenizer.json", include_bytes!("../data/spacy-en-tokenizer.json"),
+         "2ffa6b3b6f4da114531ff897c02f3d2551485ef45c3ca1f6e6b2fdc80e034d1d"),
     ];
     for (name, bytes, expected) in pinned {
         assert_eq!(sha256(bytes), expected, "{name} differs from its pinned upstream release");

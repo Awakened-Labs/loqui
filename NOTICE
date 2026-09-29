@@ -19,13 +19,18 @@ Third-party material embedded in, or downloaded by, this software:
   Apache License 2.0; copy at crates/loqui-g2p/data/LICENSE-misaki-Apache-2.0.
   Embedded unmodified in crates/loqui-g2p/data/misaki-*.json.
 
-  misaki-rs — https://github.com/MicheleYin/misaki-rs
-  Copyright (c) 2026 Michele Yin. MIT License. Used for tokenization, POS
-  tagging, morphology and number handling. Its bundled lexicons are NOT
-  used (they were regenerated through eSpeak NG into a different alphabet).
-  Open provenance item: its averaged-perceptron POS tagger weights appear to
-  derive from NLTK's averaged_perceptron_tagger; their licence is not stated
-  by misaki-rs and is being confirmed.
+  misaki English G2P logic (misaki/en.py, version 0.9.4) — https://github.com/hexgrad/misaki
+  Apache License 2.0. Ported to Rust in crates/loqui-g2p/src/en.rs.
+
+  spaCy English tokenizer rules (spaCy 3.8.16) — https://github.com/explosion/spaCy
+  Copyright (c) 2016-2026 ExplosionAI GmbH, 2016 spaCy GmbH, 2015 Matthew Honnibal.
+  MIT License. Exported as data to crates/loqui-g2p/data/spacy-en-tokenizer.json;
+  the tokenizer algorithm is reimplemented in crates/loqui-g2p/src/tokenize.rs.
+
+  POS tagger weights (crates/loqui-g2p/data/tagger-en.bin) are original to
+  loqui: an averaged perceptron trained on public-domain Project Gutenberg
+  text and generated sentences, labelled by spaCy's MIT-licensed
+  en_core_web_sm 3.8.0. See tools/parity/README.md to reproduce them.
 
   English grapheme-to-phoneme models, embedded unmodified:
     crates/loqui-g2p/data/g2p-en-us.safetensors

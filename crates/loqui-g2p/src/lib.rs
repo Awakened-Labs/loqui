@@ -1,37 +1,41 @@
-//! English grapheme-to-phoneme conversion for Kokoro, GPL-free by default.
+//! English grapheme-to-phoneme conversion for Kokoro, GPL-free.
 //!
-//! Text goes through [misaki-rs], a port of Kokoro's own G2P: the misaki
-//! gold and silver lexicons, an averaged-perceptron POS tagger for
-//! heteronyms ("read", "lead", "object"), suffix morphology and number
-//! expansion. The output is Kokoro's phoneme alphabet.
+//! Kokoro's voices were trained on phonemes from misaki, hexgrad's G2P, so
+//! this crate reproduces misaki's English pipeline: spaCy's tokenization,
+//! Penn Treebank tags, the misaki gold and silver lexicons, heteronym
+//! selection, stress rules, morphology, and number, currency and year
+//! reading. Each stage is checked against its Python original by the parity
+//! harness in `tools/parity`.
 //!
-//! What differs from upstream misaki is the fallback for words no lexicon
-//! or rule covers. Upstream hands those to eSpeak NG, which is GPL-3.0 and
-//! cannot be linked into permissively licensed or proprietary programs.
-//! Here the default is a small embedded neural model trained on the same
-//! lexicons (see [`OovFallback::Neural`]), and eSpeak NG is an opt-in
-//! feature.
-//!
-//! [misaki-rs]: https://crates.io/crates/misaki-rs
+//! Where upstream hands unknown words to eSpeak NG (GPL-3.0), this crate
+//! uses a small embedded neural model trained on the same lexicons
+//! ([`OovFallback::Neural`]). It links no GPL code.
 //!
 //! ```
 //! use loqui_g2p::{Dialect, G2p, OovFallback};
 //!
 //! let g2p = G2p::new(Dialect::American, OovFallback::Neural)?;
-//! assert!(g2p.phonemize("Hello world.")?.starts_with("həlˈO wˈɜɹld"));
+//! assert_eq!(g2p.phonemize("Hello world."), "həlˈO wˈɜɹld.");
 //! # Ok::<(), loqui_g2p::Error>(())
 //! ```
 
+mod en;
 mod lexicon;
 mod neural;
-
-use std::sync::Arc;
-
-use misaki_rs::fallback::FallbackError;
+pub mod numbers;
+pub mod tagger;
+pub mod tokenize;
 
 pub use neural::{MAX_WORD_CHARS, NeuralG2p};
 
-/// Which English the lexicons, tagger rules and fallback model follow.
+use en::{Lexicon, MToken};
+use tagger::Tagger;
+use tokenize::Tokenizer;
+
+/// What misaki writes for a word it could not phonemize at all.
+pub const UNKNOWN: &str = "❓";
+
+/// Which English the lexicons, rules and fallback model follow.
 ///
 /// Kokoro voices encode their dialect in the first letter of the voice id:
 /// `a` (`af_heart`) is American, `b` (`bf_emma`) is British.
@@ -44,19 +48,12 @@ pub enum Dialect {
 impl Dialect {
     /// The dialect a Kokoro voice id implies, or `None` for a voice whose
     /// language this crate does not phonemize (Kokoro's `e`, `f`, `h`, `i`,
-    /// `j`, `p` and `z` voices need eSpeak NG or other G2P engines).
+    /// `j`, `p` and `z` voices need other G2P engines).
     pub fn for_kokoro_voice(voice: &str) -> Option<Self> {
         match voice.chars().next()? {
             'a' => Some(Self::American),
             'b' => Some(Self::British),
             _ => None,
-        }
-    }
-
-    fn language(self) -> misaki_rs::Language {
-        match self {
-            Self::American => misaki_rs::Language::EnglishUS,
-            Self::British => misaki_rs::Language::EnglishGB,
         }
     }
 }
@@ -66,35 +63,32 @@ impl Dialect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OovFallback {
     /// The embedded character-level BART model (Apache-2.0), trained on the
-    /// misaki lexicons. The default: it pronounces unseen words as words
-    /// and links no GPL code.
+    /// misaki lexicons. It pronounces unseen words as words, and scores
+    /// slightly better than eSpeak NG against CMUdict on held-out names.
     #[default]
     Neural,
     /// Spell the word letter by letter. Predictable, and right for
     /// acronyms, but it reads "zorbulate" as nine letter names.
     SpellOut,
-    /// eSpeak NG, linked in. GPL-3.0: a binary built with the `espeak`
-    /// feature is subject to the GPL. Matches upstream misaki's behaviour.
-    #[cfg(feature = "espeak")]
-    Espeak,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The embedded G2P checkpoint could not be read. This is a build
-    /// defect, never a runtime condition.
-    #[error("embedded G2P weights are malformed: {0}")]
+    /// Embedded data (model weights, lexicons, tokenizer rules) could not
+    /// be read. This is a build defect, never a runtime condition.
+    #[error("embedded G2P data is malformed: {0}")]
     Weights(String),
-    #[error("phonemization failed: {0}")]
-    Phonemize(String),
 }
 
 /// A ready-to-use phonemizer. Construction parses the lexicons (tens of
 /// megabytes of JSON), so build one and share it: it is `Send + Sync`.
 pub struct G2p {
-    inner: misaki_rs::G2P,
     dialect: Dialect,
     fallback: OovFallback,
+    tokenizer: Tokenizer,
+    tagger: Tagger,
+    lexicon: Lexicon,
+    neural: Option<NeuralG2p>,
 }
 
 impl std::fmt::Debug for G2p {
@@ -105,22 +99,17 @@ impl std::fmt::Debug for G2p {
 
 impl G2p {
     pub fn new(dialect: Dialect, fallback: OovFallback) -> Result<Self, Error> {
-        let language = dialect.language();
-        let inner = match fallback {
-            OovFallback::Neural => {
-                let model = Arc::new(NeuralG2p::load(dialect)?);
-                misaki_rs::G2P::with_fallback(language, Some(Box::new(NeuralFallback(model))))
-            }
-            OovFallback::SpellOut => misaki_rs::G2P::with_fallback(language, None),
-            // misaki-rs installs its own eSpeak fallback when the feature is on.
-            #[cfg(feature = "espeak")]
-            OovFallback::Espeak => misaki_rs::G2P::new(language),
-        };
-        let mut inner = inner;
-        let (golds, silvers) = lexicon::load(dialect)?;
-        inner.lexicon.golds = golds;
-        inner.lexicon.silvers = silvers;
-        Ok(Self { inner, dialect, fallback })
+        Ok(Self {
+            dialect,
+            fallback,
+            tokenizer: Tokenizer::english()?,
+            tagger: Tagger::english()?,
+            lexicon: lexicon::load(dialect)?,
+            neural: match fallback {
+                OovFallback::Neural => Some(NeuralG2p::load(dialect)?),
+                OovFallback::SpellOut => None,
+            },
+        })
     }
 
     pub fn dialect(&self) -> Dialect {
@@ -128,22 +117,69 @@ impl G2p {
     }
 
     /// Converts `text` to Kokoro phonemes. Punctuation is kept, because
-    /// Kokoro uses it for prosody.
-    pub fn phonemize(&self, text: &str) -> Result<String, Error> {
-        self.inner.g2p(text).map(|(phonemes, _)| phonemes).map_err(|e| Error::Phonemize(e.to_string()))
+    /// Kokoro uses it for prosody. misaki's inline markup is honoured:
+    /// `[word](/phonemes/)` overrides a pronunciation, `[word](+2)` sets
+    /// stress, and `[5](#a#)` passes number-reading flags.
+    pub fn phonemize(&self, text: &str) -> String {
+        let word_fallback = |word: &str| -> Option<String> {
+            // A short word with no vowel letter ("kg", "mph", "SQL" in
+            // lowercase) is an abbreviation; eSpeak spells those out too.
+            let vowelless = !word.chars().any(|c| "aeiouyAEIOUY".contains(c));
+            if vowelless
+                && word.chars().count() <= 5
+                && let Some(spelled) = self.lexicon.spell(word)
+            {
+                return Some(spelled);
+            }
+            match &self.neural {
+                // A word the model cannot encode at all ("日本") is dropped
+                // rather than read as an unknown marker.
+                Some(model) => Some(model.phonemize(word).unwrap_or_default()),
+                None => self.lexicon.spell(word),
+            }
+        };
+        let fallback = |word: &str| self.lexicon.compose_fallback(word, &word_fallback);
+        en::g2p(&self.lexicon, text, |t| self.tag(t), &fallback, UNKNOWN)
+    }
+
+    fn tag(&self, text: &str) -> Vec<MToken> {
+        let tokens = self.tokenizer.tokenize(text);
+        let words: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+        let tags = self.tagger.tag(&words);
+        tokens
+            .into_iter()
+            .zip(tags)
+            // spaCy tags URLs and e-mail addresses ADD, and misaki then reads
+            // their "." as "dot" and "/" as "slash". The pattern decides
+            // that more reliably than the statistical tagger does.
+            .map(|(t, tag)| {
+                let tag = if self.tokenizer.is_url(&t.text) {
+                    "ADD".to_owned()
+                } else if is_numeral(&t.text) {
+                    // A numeral is CD whatever its neighbours say, and misaki
+                    // reads money and plain numbers only from CD tokens.
+                    "CD".to_owned()
+                } else {
+                    tag
+                };
+                (t, tag)
+            })
+            .map(|(t, tag)| MToken {
+                whitespace: if t.space_after { " ".to_owned() } else { String::new() },
+                text: t.text,
+                tag,
+                is_head: true,
+                ..MToken::default()
+            })
+            .collect()
     }
 }
 
-/// Adapts [`NeuralG2p`] to misaki-rs's fallback hook.
-struct NeuralFallback(Arc<NeuralG2p>);
-
-impl misaki_rs::Fallback for NeuralFallback {
-    fn phonemize(&self, word: &str) -> Result<String, FallbackError> {
-        // misaki-rs aborts the whole utterance when a fallback errors. A word
-        // the model cannot encode at all ("日本") is better dropped than
-        // allowed to silence the sentence around it.
-        Ok(self.0.phonemize(word).unwrap_or_default())
-    }
+/// Digits with optional thousands separators, a decimal point and a leading
+/// minus: "12", "1,234,567.89", "-5", "4.7".
+fn is_numeral(text: &str) -> bool {
+    let body = text.strip_prefix('-').unwrap_or(text);
+    body.starts_with(|c: char| c.is_ascii_digit()) && body.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')
 }
 
 #[cfg(test)]
@@ -169,11 +205,13 @@ mod tests {
     fn neural_fallback_pronounces_unknown_words_as_words() {
         let neural = G2p::new(Dialect::American, OovFallback::Neural).unwrap();
         let spelled = G2p::new(Dialect::American, OovFallback::SpellOut).unwrap();
-        let word = "zorbulate";
-        let n = neural.phonemize(word).unwrap();
-        let n = n.trim();
-        let s = spelled.phonemize(word).unwrap();
-        assert!(!n.contains(' '), "neural output should be one word, got {n:?}");
-        assert!(s.split_whitespace().count() >= word.len(), "spell-out should be letter names, got {s:?}");
+        assert_eq!(neural.phonemize("zorbulate"), "zˈɔɹbjəlˌAt");
+        assert_ne!(neural.phonemize("zorbulate"), spelled.phonemize("zorbulate"));
+    }
+
+    #[test]
+    fn inline_markup_overrides_pronunciation() {
+        let g2p = G2p::new(Dialect::American, OovFallback::Neural).unwrap();
+        assert_eq!(g2p.phonemize("[Kokoro](/kˈOkəɹO/) speaks."), "kˈOkəɹO spˈiks.");
     }
 }

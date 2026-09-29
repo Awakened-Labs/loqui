@@ -13,16 +13,20 @@ include = ["src/**", "data/**", "Cargo.toml", "README.md"]
 workspace = true
 
 [dependencies]
-# Lexicon lookup, POS tagging (heteronyms), morphology and number expansion:
-# a Rust port of hexgrad/misaki. MIT. `default-features = false` is the whole
-# point of this crate: its default `espeak` feature links espeak-ng (GPL-3.0),
-# which must never enter a default build. We supply the out-of-vocabulary
-# fallback ourselves (see `neural.rs`).
-misaki-rs = { version = "0.6", default-features = false }
-
-# Parses the safetensors header of the embedded G2P model. Already in the
-# graph through misaki-rs, so it adds no lockfile nodes.
+# Parses the safetensors header of the embedded G2P model, the lexicons and
+# the tokenizer rules.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# spaCy's tokenizer patterns and misaki's subtokenizer use lookaround
+# (`(?<=[0-9])`, `(?=\p{Lu}\p{Ll})`) and one backreference, which `regex`
+# deliberately does not support. fancy-regex adds them by backtracking only
+# where a pattern needs it and hands every other part to `regex`. MIT.
+fancy-regex = "0.14"
+
+# misaki normalises each word with NFKC before lookup ("ﬁ" to "fi", "²" to
+# "2"). MIT/Apache.
+unicode-normalization = "0.1"
 
 # `erf` for the exact GELU the BART checkpoint was trained with. `std` has no
 # `erf`, and the tanh approximation drifts enough to flip argmax on a few
@@ -30,11 +34,6 @@ serde_json = "1"
 libm = "0.2"
 
 thiserror = "2"
-
-[features]
-# Links eSpeak NG through misaki-rs as the out-of-vocabulary fallback.
-# GPL-3.0: a binary built with this feature is GPL. Off by default.
-espeak = ["misaki-rs/espeak"]
 
 [dev-dependencies]
 # Pins the embedded checkpoints and lexicons to the exact upstream bytes.
