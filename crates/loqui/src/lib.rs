@@ -75,7 +75,9 @@ impl Error {
         matches!(self, Self::Invalid(_) | Self::InputTooLong { .. } | Self::Disabled(_))
             || matches!(
                 self,
-                Self::Audio(loqui_audio::Error::Decode(_) | loqui_audio::Error::TooLong { .. } | loqui_audio::Error::UnsupportedFormat(_))
+                Self::Audio(
+                    loqui_audio::Error::Decode(_) | loqui_audio::Error::TooLong { .. } | loqui_audio::Error::UnsupportedFormat { .. }
+                )
             )
             || matches!(self, Self::Tts(loqui_kokoro::Error::Voice(_) | loqui_kokoro::Error::Speed(_)))
     }

@@ -8,6 +8,8 @@
 
 mod decode;
 mod encode;
+#[cfg(feature = "mp3")]
+mod mp3;
 mod ogg;
 mod opus;
 
@@ -40,20 +42,33 @@ pub enum Format {
     Flac,
     /// Opus in Ogg, as OpenAI serves `opus`.
     Opus,
+    /// MP3 through LAME, with the `mp3` feature.
+    #[cfg(feature = "mp3")]
+    Mp3,
     /// Headerless 16-bit little-endian PCM at the synthesis rate.
     Pcm,
 }
 
 impl Format {
+    /// What a request that names no format gets: MP3, as OpenAI serves,
+    /// where this build can encode it; otherwise WAV.
+    #[cfg(feature = "mp3")]
+    pub const DEFAULT: Format = Format::Mp3;
+    #[cfg(not(feature = "mp3"))]
+    pub const DEFAULT: Format = Format::Wav;
+
     /// Parses an OpenAI `response_format`. Formats this build cannot
-    /// produce (`mp3`, `aac`) are errors that name what can be.
+    /// produce (`aac`, and `mp3` without the feature) are errors that name
+    /// what can be.
     pub fn parse(name: &str) -> Result<Self, Error> {
         match name {
             "wav" => Ok(Self::Wav),
             "flac" => Ok(Self::Flac),
             "opus" => Ok(Self::Opus),
+            #[cfg(feature = "mp3")]
+            "mp3" => Ok(Self::Mp3),
             "pcm" => Ok(Self::Pcm),
-            other => Err(Error::UnsupportedFormat(other.to_owned())),
+            other => Err(Error::UnsupportedFormat { name: other.to_owned(), available: Self::names() }),
         }
     }
 
@@ -62,17 +77,42 @@ impl Format {
             Self::Wav => "audio/wav",
             Self::Flac => "audio/flac",
             Self::Opus => "audio/ogg",
+            #[cfg(feature = "mp3")]
+            Self::Mp3 => "audio/mpeg",
             Self::Pcm => "audio/pcm",
         }
     }
 
-    pub const ALL: [Format; 4] = [Format::Wav, Format::Flac, Format::Opus, Format::Pcm];
+    pub const ALL: &[Format] = &[
+        Format::Wav,
+        Format::Flac,
+        Format::Opus,
+        #[cfg(feature = "mp3")]
+        Format::Mp3,
+        Format::Pcm,
+    ];
+
+    /// The OpenAI name, as `response_format` spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Wav => "wav",
+            Self::Flac => "flac",
+            Self::Opus => "opus",
+            #[cfg(feature = "mp3")]
+            Self::Mp3 => "mp3",
+            Self::Pcm => "pcm",
+        }
+    }
+
+    fn names() -> String {
+        Self::ALL.iter().map(|f| f.name()).collect::<Vec<_>>().join(", ")
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("unsupported output format {0:?}; this build produces wav, flac, opus and pcm")]
-    UnsupportedFormat(String),
+    #[error("unsupported output format {name:?}; this build produces {available}")]
+    UnsupportedFormat { name: String, available: String },
     #[error("encoding failed: {0}")]
     Encode(String),
     #[error("could not decode audio: {0}")]
@@ -90,7 +130,10 @@ mod tests {
         assert_eq!(Format::parse("wav").unwrap(), Format::Wav);
         assert_eq!(Format::parse("flac").unwrap(), Format::Flac);
         assert_eq!(Format::parse("opus").unwrap(), Format::Opus);
-        let err = Format::parse("mp3").unwrap_err().to_string();
-        assert!(err.contains("mp3") && err.contains("wav"), "{err}");
+        let err = Format::parse("aac").unwrap_err().to_string();
+        assert!(err.contains("aac") && err.contains("wav, flac, opus"), "{err}");
+        for format in Format::ALL {
+            assert_eq!(Format::parse(format.name()).unwrap(), *format);
+        }
     }
 }

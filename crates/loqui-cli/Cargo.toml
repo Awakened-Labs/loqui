@@ -29,5 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # no C++ toolchain).
 default = ["whisper", "tls"]
 whisper = ["loqui/whisper", "loqui-server/whisper"]
+# MP3 output through LAME (LGPL). Off by default; see loqui-audio.
+mp3 = ["loqui/mp3", "loqui-server/mp3"]
 tls = ["loqui-server/tls"]
 cuda = ["loqui/cuda", "loqui-server/cuda"]

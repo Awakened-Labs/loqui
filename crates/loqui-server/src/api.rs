@@ -133,10 +133,12 @@ async fn speech(
     {
         return Err(ApiError::bad_request("wrong_model", "that is a transcription model"));
     }
-    // OpenAI defaults to mp3, which this server does not encode; WAV is the
-    // closest widely playable default.
-    let format = loqui::Format::parse(body.response_format.as_deref().unwrap_or("wav"))
-        .map_err(|e| ApiError::bad_request("unsupported_format", e.to_string()))?;
+    // OpenAI defaults to mp3; so does this server when built with it, and
+    // falls back to WAV, the most widely playable, when not.
+    let format = match body.response_format.as_deref() {
+        Some(name) => loqui::Format::parse(name).map_err(|e| ApiError::bad_request("unsupported_format", e.to_string()))?,
+        None => loqui::Format::DEFAULT,
+    };
     let request = loqui::SpeakRequest {
         text: body.input,
         voice: body.voice.unwrap_or_else(|| loqui_kokoro::DEFAULT_VOICE.to_owned()),

@@ -40,13 +40,18 @@ and checked against SHA-256 digests (`--offline` / `Downloads::Deny` to
 forbid downloads; `loqui fetch` to pre-download). GPU builds:
 `--features cuda` (needs the CUDA toolkit), then `--gpu cuda`.
 
+MP3 output is off by default: `--features mp3` builds it in with LAME, which
+is LGPL (a C compiler and make at build time). With it, `response_format`
+may be `mp3` and defaults to it, as OpenAI's does; without it, the default
+is `wav`. Everything else in loqui is MIT and permissively licensed.
+
 ## API
 
 OpenAI-compatible, and nothing else:
 
 | Route | |
 |---|---|
-| `POST /v1/audio/speech` | `{model, input, voice, response_format: wav\|flac\|opus\|pcm, speed}` |
+| `POST /v1/audio/speech` | `{model, input, voice, response_format: wav\|flac\|opus\|pcm (\|mp3), speed}` |
 | `POST /v1/audio/transcriptions` | multipart `file`, `language`, `prompt`, `temperature`, `response_format: json\|text\|verbose_json\|srt\|vtt` |
 | `POST /v1/audio/translations` | as above, into English |
 | `GET /v1/models` | ids with `owned_by: loqui/tts\|loqui/stt` and a `task` field |

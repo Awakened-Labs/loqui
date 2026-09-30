@@ -130,7 +130,7 @@ struct SpeakArgs {
     voice: String,
     #[arg(long, default_value_t = 1.0)]
     speed: f32,
-    /// wav, flac, opus or pcm.
+    /// wav, flac, opus or pcm; mp3 in builds with the `mp3` feature.
     #[arg(long, default_value = "wav")]
     format: String,
     #[command(flatten)]

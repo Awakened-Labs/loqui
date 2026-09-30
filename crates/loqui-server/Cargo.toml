@@ -44,6 +44,7 @@ tokio-rustls = { version = "0.26", optional = true, default-features = false, fe
 [features]
 default = []
 whisper = ["loqui/whisper"]
+mp3 = ["loqui/mp3"]
 cuda = ["loqui/cuda"]
 # Serve HTTPS on network listeners. Uses rustls with the `ring` provider
 # (C and assembly are compiled, hence a feature).

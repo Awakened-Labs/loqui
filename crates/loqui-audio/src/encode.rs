@@ -10,6 +10,8 @@ pub fn encode(pcm: &Pcm, format: Format) -> Result<Vec<u8>, Error> {
         Format::Wav => Ok(wav(pcm)),
         Format::Flac => flac(pcm),
         Format::Opus => crate::opus::encode_ogg(pcm),
+        #[cfg(feature = "mp3")]
+        Format::Mp3 => crate::mp3::encode(pcm),
         Format::Pcm => Ok(to_i16(&pcm.samples).flat_map(i16::to_le_bytes).collect()),
     }
 }
@@ -121,6 +123,23 @@ mod tests {
             // A pre-skip off by even a millisecond would fall well short.
             let shifted = correlation(&back.samples[48..], &expected.samples);
             assert!(r > shifted + 0.1, "{rate} Hz: aligned {r}, shifted by 1 ms {shifted}");
+        }
+    }
+
+    /// LAME's delay and padding are recorded in its tag and trimmed by
+    /// symphonia, an independent decoder, back to the input's exact length.
+    #[cfg(feature = "mp3")]
+    #[test]
+    fn mp3_decodes_to_the_same_length_and_timing() {
+        for (rate, secs) in [(24_000, 1.3), (22_050, 0.7), (16_000, 1.0), (48_000, 0.5)] {
+            let original = chirp(rate, secs);
+            let bytes = encode(&original, Format::Mp3).unwrap();
+            assert!(bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0, "{rate} Hz: no MPEG frame sync");
+            let back = decode(&bytes, None).unwrap();
+            assert_eq!(back.rate, rate);
+            assert_eq!(back.samples.len(), original.samples.len(), "{rate} Hz");
+            let r = correlation(&back.samples, &original.samples);
+            assert!(r > 0.99, "{rate} Hz: correlation {r}");
         }
     }
 

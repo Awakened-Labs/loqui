@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Audio for loqui: WAV, FLAC and raw PCM out; common containers in, resampled for Whisper. Pure Rust."
+description = "Audio for loqui: WAV, FLAC, Ogg Opus and raw PCM out (MP3 behind a feature); common containers in, resampled for Whisper. Pure Rust."
 
 [lints]
 workspace = true
@@ -26,3 +26,13 @@ rubato = "=4"
 
 thiserror = "2"
 opus-rs = "0.1.34"
+
+# MP3 encoding: LAME 3.100 (LGPL), compiled from bundled source with a C
+# compiler and make, linked statically. Only with the `mp3` feature.
+mp3lame-encoder = { version = "0.2.5", optional = true }
+
+[features]
+default = []
+# MP3 output through LAME. Off by default: it is the one LGPL component, and
+# a program that links loqui in process takes on LAME's relinking terms.
+mp3 = ["dep:mp3lame-encoder"]

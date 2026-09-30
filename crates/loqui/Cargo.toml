@@ -32,6 +32,8 @@ tracing = "0.1"
 [features]
 default = []
 whisper = ["dep:loqui-whisper"]
+# MP3 speech output through LAME (LGPL); see loqui-audio's `mp3` feature.
+mp3 = ["loqui-audio/mp3"]
 # GPU inference: Kokoro through ONNX Runtime's CUDA provider, Whisper through
 # whisper.cpp's CUDA backend (needs the CUDA toolkit at build time).
 cuda = ["loqui-kokoro/cuda", "loqui-whisper?/cuda"]
