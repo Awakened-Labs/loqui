@@ -115,8 +115,8 @@ mod tests {
                 continue; // one frame: too short to judge the codec's fidelity
             }
             let r = correlation(&back.samples, &expected.samples);
-            // opus-rs's SILK and hybrid modes, and its 24 kHz input, garble
-            // whole windows yet still reach 0.9; faithful CELT reaches 0.999.
+            // Either opus-rs bug we route around (#37: 24 kHz input; #38:
+            // SILK/hybrid timing) still scores 0.9; exact CELT reaches 0.999.
             assert!(r > 0.99, "{rate} Hz: correlation {r}");
             // A pre-skip off by even a millisecond would fall well short.
             let shifted = correlation(&back.samples[48..], &expected.samples);

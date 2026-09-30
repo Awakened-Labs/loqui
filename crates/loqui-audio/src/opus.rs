@@ -57,9 +57,9 @@ impl Opus {
 const PRE_SKIP: u16 = 312;
 
 /// High for one voice, and chosen for opus-rs rather than for speech: below
-/// 64 kbps it switches to its SILK and hybrid modes, which in 0.1.34 garble
-/// stretches of audio; at 64 kbps it stays in CELT, which round-trips
-/// faithfully. 8 KB a second.
+/// 64 kbps its SILK and hybrid paths mangle the first ~200 ms and run up to
+/// 17 samples behind the pre-skip (restsend/opus-rs#38); at 64 kbps it stays
+/// in CELT, which is exact from the first sample. 8 KB a second.
 const BITRATE: i32 = 64_000;
 
 /// Encodes speech as Ogg Opus (RFC 7845): mono, 20 ms packets, the priming
@@ -69,8 +69,8 @@ pub(crate) fn encode_ogg(pcm: &Pcm) -> Result<Vec<u8>, Error> {
         return Err(Error::Encode(UNSUPPORTED_CPU.into()));
     }
     // Opus accepts 8 to 48 kHz input, but opus-rs 0.1.34 encodes 24 kHz
-    // (Kokoro's rate) into audible garbage in every mode, while 48 kHz input
-    // round-trips faithfully. So everything is encoded from 48 kHz.
+    // (Kokoro's rate) into garbage in every mode (restsend/opus-rs#37),
+    // while 48 kHz round-trips faithfully. So everything is encoded from 48.
     let input = resample(pcm.clone(), RATE)?;
     let frame = RATE as usize / 50;
     let mut encoder = OpusEncoder::new(RATE as i32, 1, Application::Audio).map_err(|e| Error::Encode(format!("Opus: {e}")))?;
