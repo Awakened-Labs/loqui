@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 use loqui::{Downloads, Engine, KokoroVariant, TtsConfig};
@@ -185,7 +184,7 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
         builder = builder.stt(Some(loqui::SttConfig {
             model: args.stt_model.clone(),
             device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
-            idle_ttl: (args.stt_idle_secs > 0).then(|| Duration::from_secs(args.stt_idle_secs)),
+            idle_ttl: (args.stt_idle_secs > 0).then(|| std::time::Duration::from_secs(args.stt_idle_secs)),
         }));
     }
     #[cfg(not(feature = "whisper"))]
