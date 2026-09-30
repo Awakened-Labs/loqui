@@ -329,7 +329,7 @@ pub struct Speech {
 }
 
 #[cfg(feature = "whisper")]
-pub use loqui_whisper::{Segment, Task, Transcription};
+pub use loqui_whisper::{Device as SttDevice, Segment, Task, Transcription};
 
 /// A speech-to-text request.
 #[cfg(feature = "whisper")]

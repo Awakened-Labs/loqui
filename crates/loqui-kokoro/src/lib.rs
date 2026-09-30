@@ -79,12 +79,13 @@ pub fn parse_voice_spec(spec: &str) -> Result<Vec<(String, f32)>, Error> {
                         .strip_suffix(')')
                         .and_then(|w| w.parse::<f32>().ok())
                         .filter(|w| w.is_finite() && *w >= 0.0);
-                    (id, w.ok_or_else(|| Error::Voice(format!("bad weight in {part:?}")))?)
+                    (id, w.ok_or_else(|| Error::Voice("voice weights must be non-negative numbers, as in af_bella(2)+af_sky(1)".into()))?)
                 }
                 None => (part, 1.0),
             };
+            // The id is not echoed: it is caller input that failed validation.
             if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                return Err(Error::Voice(format!("invalid voice id {id:?}")));
+                return Err(Error::Voice("voice ids may contain only ASCII letters, digits and _".into()));
             }
             Ok((id.to_owned(), weight))
         })

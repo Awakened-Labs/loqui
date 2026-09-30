@@ -3,8 +3,10 @@ resolver = "3"
 members = [
     "crates/loqui",
     "crates/loqui-audio",
+    "crates/loqui-cli",
     "crates/loqui-g2p",
     "crates/loqui-kokoro",
+    "crates/loqui-server",
     "crates/loqui-whisper",
 ]
 

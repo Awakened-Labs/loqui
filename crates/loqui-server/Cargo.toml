@@ -1,0 +1,54 @@
+[package]
+name = "loqui-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A safe-by-default OpenAI-compatible speech server for loqui: Unix socket first, tokens always, no browsers."
+
+[lints]
+workspace = true
+
+[dependencies]
+loqui = { path = "../loqui", version = "0.1.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+
+# HTTP. Routing, extractors and multipart from axum; connections are served
+# by hyper directly (see serve.rs) so each one can be checked and timed.
+axum = { version = "0.8", default-features = false, features = ["json", "multipart", "tokio", "http1"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Tokens: SHA-256 digests, constant-time comparison, OS randomness,
+# zeroed plaintext.
+sha2 = "0.10"
+subtle = "2.6"
+getrandom = "0.4"
+zeroize = "1.8"
+
+# The effective uid, without `unsafe` (for token-file and socket checks).
+rustix = { version = "1", features = ["process"] }
+
+thiserror = "2"
+tracing = "0.1"
+
+# TLS for network listeners.
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
+rustls-pemfile = { version = "2", optional = true }
+
+[features]
+default = []
+whisper = ["loqui/whisper"]
+cuda = ["loqui/cuda"]
+# Serve HTTPS on network listeners. Uses rustls with the `ring` provider
+# (C and assembly are compiled, hence a feature).
+tls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
