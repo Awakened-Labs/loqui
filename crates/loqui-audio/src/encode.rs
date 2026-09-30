@@ -9,6 +9,7 @@ pub fn encode(pcm: &Pcm, format: Format) -> Result<Vec<u8>, Error> {
     match format {
         Format::Wav => Ok(wav(pcm)),
         Format::Flac => flac(pcm),
+        Format::Opus => crate::opus::encode_ogg(pcm),
         Format::Pcm => Ok(to_i16(&pcm.samples).flat_map(i16::to_le_bytes).collect()),
     }
 }
@@ -76,6 +77,58 @@ mod tests {
             let worst = back.samples.iter().zip(&original.samples).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
             assert!(worst < 1e-4, "{format:?}: max error {worst}");
         }
+    }
+
+    /// A rising chirp: aperiodic, so any misalignment shows as lost
+    /// correlation rather than hiding a whole period away.
+    fn chirp(rate: u32, secs: f32) -> Pcm {
+        let n = (rate as f32 * secs) as usize;
+        let samples = (0..n)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                (std::f32::consts::TAU * (200.0 * t + 600.0 * t * t)).sin() * 0.4
+            })
+            .collect();
+        Pcm { samples, rate }
+    }
+
+    fn correlation(a: &[f32], b: &[f32]) -> f32 {
+        let dot = |x: &[f32], y: &[f32]| x.iter().zip(y).map(|(p, q)| p * q).sum::<f32>();
+        dot(a, b) / (dot(a, a) * dot(b, b)).sqrt()
+    }
+
+    /// Opus is lossy, so the check is structural: symphonia's Ogg demuxer
+    /// reads our pages, the priming and padding are trimmed to the sample,
+    /// and what remains lines up with the input in time.
+    #[test]
+    fn opus_decodes_to_the_same_length_and_timing() {
+        for (rate, secs) in [(24_000, 1.3), (22_050, 0.7), (16_000, 1.0), (48_000, 0.02)] {
+            let original = chirp(rate, secs);
+            let bytes = encode(&original, Format::Opus).unwrap();
+            assert_eq!(&bytes[..4], b"OggS");
+            let back = decode(&bytes, None).unwrap();
+            assert_eq!(back.rate, 48_000);
+            let expected = crate::resample(original, 48_000).unwrap();
+            let len = back.samples.len() as isize - expected.samples.len() as isize;
+            assert!(len.abs() <= 2, "{rate} Hz: {} samples back for {}", back.samples.len(), expected.samples.len());
+            if secs < 0.1 {
+                continue; // one frame: too short to judge the codec's fidelity
+            }
+            let r = correlation(&back.samples, &expected.samples);
+            // opus-rs's SILK and hybrid modes, and its 24 kHz input, garble
+            // whole windows yet still reach 0.9; faithful CELT reaches 0.999.
+            assert!(r > 0.99, "{rate} Hz: correlation {r}");
+            // A pre-skip off by even a millisecond would fall well short.
+            let shifted = correlation(&back.samples[48..], &expected.samples);
+            assert!(r > shifted + 0.1, "{rate} Hz: aligned {r}, shifted by 1 ms {shifted}");
+        }
+    }
+
+    #[test]
+    fn opus_of_silence_is_small_and_valid() {
+        let bytes = encode(&Pcm { samples: vec![0.0; 24_000 * 10], rate: 24_000 }, Format::Opus).unwrap();
+        assert!(bytes.len() < 10_000, "{} bytes", bytes.len());
+        assert_eq!(decode(&bytes, None).unwrap().samples.len(), 480_000);
     }
 
     #[test]

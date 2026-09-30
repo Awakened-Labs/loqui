@@ -46,7 +46,7 @@ OpenAI-compatible, and nothing else:
 
 | Route | |
 |---|---|
-| `POST /v1/audio/speech` | `{model, input, voice, response_format: wav\|flac\|pcm, speed}` |
+| `POST /v1/audio/speech` | `{model, input, voice, response_format: wav\|flac\|opus\|pcm, speed}` |
 | `POST /v1/audio/transcriptions` | multipart `file`, `language`, `prompt`, `temperature`, `response_format: json\|text\|verbose_json\|srt\|vtt` |
 | `POST /v1/audio/translations` | as above, into English |
 | `GET /v1/models` | ids with `owned_by: loqui/tts\|loqui/stt` and a `task` field |
