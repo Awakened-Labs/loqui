@@ -1,0 +1,27 @@
+[package]
+name = "loqui-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Audio for loqui: WAV, FLAC and raw PCM out; common containers in, resampled for Whisper. Pure Rust."
+
+[lints]
+workspace = true
+
+[dependencies]
+# FLAC encoding, pure Rust (Apache-2.0). Default features off: `par` spawns
+# encoder threads (pointless for seconds-long speech, and threads a library
+# should not start on its own), `serde` and `log` are unused.
+flacenc = { version = "0.5", default-features = false }
+
+# Demuxing and decoding uploads. MPL-2.0 (file-level copyleft; linking is
+# unaffected). Defaults (WAV, FLAC, Ogg/Vorbis, MKV, PCM, ADPCM)
+# plus MP3 and MP4/AAC, the formats browsers and phones record.
+symphonia = { version = "0.6", features = ["mp3", "isomp4", "aac"] }
+
+# Resampling to Whisper's 16 kHz. Pinned to one major: its API moves.
+rubato = "=4"
+
+thiserror = "2"

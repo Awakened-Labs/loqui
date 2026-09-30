@@ -1,7 +1,11 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/loqui",
+    "crates/loqui-audio",
     "crates/loqui-g2p",
+    "crates/loqui-kokoro",
+    "crates/loqui-whisper",
 ]
 
 [workspace.package]

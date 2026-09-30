@@ -35,6 +35,18 @@ use tokenize::Tokenizer;
 /// What misaki writes for a word it could not phonemize at all.
 pub const UNKNOWN: &str = "❓";
 
+/// One spoken word and its phonemes, as Kokoro's chunker consumes them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhonemeToken {
+    /// The source text of the word.
+    pub text: String,
+    /// Its phonemes; empty for silent tokens (currency signs, `#`) and for
+    /// anything nothing could phonemize.
+    pub phonemes: String,
+    /// Whether whitespace followed the word in the source.
+    pub whitespace: bool,
+}
+
 /// Which English the lexicons, rules and fallback model follow.
 ///
 /// Kokoro voices encode their dialect in the first letter of the voice id:
@@ -121,6 +133,23 @@ impl G2p {
     /// `[word](/phonemes/)` overrides a pronunciation, `[word](+2)` sets
     /// stress, and `[5](#a#)` passes number-reading flags.
     pub fn phonemize(&self, text: &str) -> String {
+        self.run(text, UNKNOWN)
+            .into_iter()
+            .map(|tk| tk.phonemes.unwrap_or_else(|| UNKNOWN.to_owned()) + &tk.whitespace)
+            .collect()
+    }
+
+    /// The same conversion, one token per spoken word, with nothing marked
+    /// unknown: a word that cannot be phonemized is simply silent. This is
+    /// what Kokoro's own pipeline feeds its chunker (misaki with `unk=''`).
+    pub fn tokens(&self, text: &str) -> Vec<PhonemeToken> {
+        self.run(text, "")
+            .into_iter()
+            .map(|tk| PhonemeToken { phonemes: tk.phonemes.unwrap_or_default(), whitespace: !tk.whitespace.is_empty(), text: tk.text })
+            .collect()
+    }
+
+    fn run(&self, text: &str, unk: &str) -> Vec<MToken> {
         let word_fallback = |word: &str| -> Option<String> {
             // A short word with no vowel letter ("kg", "mph", "SQL" in
             // lowercase) is an abbreviation; eSpeak spells those out too.
@@ -139,7 +168,7 @@ impl G2p {
             }
         };
         let fallback = |word: &str| self.lexicon.compose_fallback(word, &word_fallback);
-        en::g2p(&self.lexicon, text, |t| self.tag(t), &fallback, UNKNOWN)
+        en::g2p(&self.lexicon, text, |t| self.tag(t), &fallback, unk)
     }
 
     fn tag(&self, text: &str) -> Vec<MToken> {
@@ -207,6 +236,14 @@ mod tests {
         let spelled = G2p::new(Dialect::American, OovFallback::SpellOut).unwrap();
         assert_eq!(neural.phonemize("zorbulate"), "zˈɔɹbjəlˌAt");
         assert_ne!(neural.phonemize("zorbulate"), spelled.phonemize("zorbulate"));
+    }
+
+    #[test]
+    fn tokens_carry_phonemes_and_spacing_per_word() {
+        let g2p = G2p::new(Dialect::American, OovFallback::Neural).unwrap();
+        let tokens = g2p.tokens("It costs $5.");
+        let shown: Vec<(&str, &str, bool)> = tokens.iter().map(|t| (t.text.as_str(), t.phonemes.as_str(), t.whitespace)).collect();
+        assert_eq!(shown, [("It", "ˌɪt", true), ("costs", "kˈɔsts", true), ("$", "", false), ("5", "fˈIv dˈɑləɹz", false), (".", ".", false)]);
     }
 
     #[test]

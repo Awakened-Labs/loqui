@@ -31,7 +31,43 @@ misaki uses:
 `--prune 2.0` keeps the model at 1.4 MB (0.7 MB compressed) for about 0.01
 points of phoneme error; see the log below.
 
+## Synthesis and end to end
+
+    # same phonemes through three runtimes
+    cargo run --release -p loqui-kokoro --example speak -- model.onnx voices/ out.wav "PHONEMES" --phonemes --raw out.f32
+    docker exec open-speech /opt/venv/bin/python /tmp/parity/kokoro_ref.py onnx ... / torch ...
+    # intelligibility: speak with both systems, transcribe with one Whisper, score
+    python3 tools/parity/e2e.py speak corpus.txt container-wavs/
+    cargo run --release -p loqui-kokoro --example speak -- model.onnx voices/ loqui-wavs/ --lines corpus.txt
+    python3 tools/parity/e2e.py transcribe container-wavs/ container.txt   # likewise loqui-wavs
+    python3 tools/parity/e2e.py wer corpus.txt container.txt
+
 ## Results log
+
+### 2026-09-29: Kokoro on ONNX Runtime (loqui-kokoro)
+
+Same phoneme string, voice af_heart, speed 1 (4.95 s of audio):
+
+| Comparison | Length | Correlation |
+|---|---|---|
+| loqui (Rust `ort`) vs Python onnxruntime, same ONNX file | identical (118,800) | 0.997 |
+| loqui vs hexgrad PyTorch KModel (what open-speech serves) | identical | 0.986 |
+
+Not bit-exact because the vocoder injects random noise; the durations the
+model predicts match exactly. Output level differs from PyTorch before
+peak normalisation, which open-speech and loqui both apply.
+
+End to end, 250 lines (200 Harvard + 50 assistant), each system's audio
+transcribed by the container's faster-whisper large-v3-turbo:
+
+| System | WER |
+|---|---|
+| open-speech (PyTorch Kokoro, misaki + eSpeak NG) | 2.28% |
+| loqui (ONNX Kokoro, loqui-g2p) | 2.42% |
+
++0.14 points; the M0 gate was +0.5. Most residual "errors" are shared
+scoring artifacts (compounds, "3rd" vs "third"). loqui synthesised the 552 s
+of audio in 168 s on the laptop CPU (real-time factor 0.30).
 
 ### 2026-09-29: full port of misaki en.py (branch g2p/foundation)
 

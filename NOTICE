@@ -42,7 +42,18 @@ Third-party material embedded in, or downloaded by, this software:
   Apache License 2.0. BART models trained on the misaki lexicons.
 
   Whisper model weights (GGML) — https://huggingface.co/ggerganov/whisper.cpp
-  MIT License (OpenAI Whisper). Downloaded at runtime; not redistributed.
+  MIT License (OpenAI Whisper). Downloaded at runtime, pinned to a commit
+  revision and SHA-256; not redistributed.
+
+Linked libraries with attribution requirements (compiled into binaries):
+
+  ONNX Runtime — https://github.com/microsoft/onnxruntime
+  Copyright (c) Microsoft Corporation. MIT License. Statically linked by the
+  `ort` crate's prebuilt binaries (loqui-kokoro).
+
+  whisper.cpp / ggml — https://github.com/ggml-org/whisper.cpp
+  Copyright (c) 2023-2026 The ggml authors. MIT License. Built from source
+  by the `whisper-rs` crate (loqui-whisper, optional).
 
 Optional, off-by-default GPL component:
 

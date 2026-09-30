@@ -1106,15 +1106,17 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     }
 }
 
-/// Runs the whole pipeline over pre-tagged tokens. `fallback` gets the text
-/// of any word the lexicon cannot handle.
+/// Runs the whole pipeline over pre-tagged tokens and returns one token per
+/// spoken word, phonemes filled in (`None` where nothing could be found).
+/// `fallback` gets the text of any word the lexicon cannot handle; `unk`
+/// stands in for an unphonemizable piece inside a multi-part word.
 pub(crate) fn g2p(
     lexicon: &Lexicon,
     text: &str,
     tokenize: impl FnOnce(&str) -> Vec<MToken>,
     fallback: &dyn Fn(&str) -> Option<String>,
     unk: &str,
-) -> String {
+) -> Vec<MToken> {
     let (text, words, features) = preprocess(text);
     let mut tokens = tokenize(&text);
     apply_features(&mut tokens, &words, &features);
@@ -1181,19 +1183,18 @@ pub(crate) fn g2p(
         }
     }
 
-    let mut out = String::new();
-    for w in words {
-        let tk = match w {
-            Word::One(tk) => tk,
-            Word::Many(group) => merge_tokens(&group, Some(unk)),
-        };
-        match tk.phonemes {
-            Some(ps) => out.push_str(&ps.replace('ɾ', "T").replace('ʔ', "t")),
-            None => out.push_str(unk),
-        }
-        out.push_str(&tk.whitespace);
-    }
-    out
+    words
+        .into_iter()
+        .map(|w| {
+            let mut tk = match w {
+                Word::One(tk) => tk,
+                Word::Many(group) => merge_tokens(&group, Some(unk)),
+            };
+            // misaki's output notation: the flap as T, the glottal stop as t.
+            tk.phonemes = tk.phonemes.map(|ps| ps.replace('ɾ', "T").replace('ʔ', "t"));
+            tk
+        })
+        .collect()
 }
 
 #[cfg(test)]
