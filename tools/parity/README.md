@@ -65,14 +65,13 @@ below, large-v3-turbo, beam 5, temperature 0, English:
 | Transcriber | WER vs the text | Real-time factor |
 |---|---|---|
 | faster-whisper (open-speech) | 2.28% | not measured |
-| loqui-whisper, whisper.cpp on CUDA 12.8 | 2.19% | 0.162 |
+| loqui-whisper, whisper.cpp on CUDA 13.0 | 2.19% | 0.158 |
 | loqui-whisper, CPU (laptop) | not run (too slow) | ~8 |
 
 The two transcribers differ on 0.37% of words (8 of 2,144). What remains
 against the text is formatting both share: "6:00 p.m." for "6 PM",
-"third" for "3rd", compounds ("bluefish", "drugstore"). Measured on a CUDA
-12.8 build; the image then moved to CUDA 13 (ONNX Runtime's provider needs
-it) and the run has not been repeated there yet.
+"third" for "3rd", compounds ("bluefish", "drugstore"). A CUDA 12.8 build
+gave the same transcript, word for word (real-time factor 0.162).
 
 Kokoro, in the CUDA 13.0.2 image:
 
@@ -80,7 +79,8 @@ Kokoro, in the CUDA 13.0.2 image:
 |---|---|
 | GPU vs CPU output, same text (6.8 s) | same length, correlation 0.998 |
 | `loqui serve --gpu cuda`, warm request | 4.46 s of audio in 0.41 s (real-time factor 0.09; CPU 0.30) |
-| GPU memory held by Kokoro fp32 | 1.1 GB |
+| `loqui serve --gpu cuda`, warm transcription of a 2.4 s clip | 0.64 s |
+| GPU memory, Kokoro fp32 alone / with Whisper large-v3-turbo | 1.1 GB / 2.7 GB |
 
 ### 2026-09-29: Kokoro on ONNX Runtime (loqui-kokoro)
 
