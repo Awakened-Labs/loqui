@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # The checks a change must pass, in the order CI runs them. CI calls this
-# script one gate at a time, so what passes here passes there.
+# script one gate at a time, so the commands never differ. The toolchain can:
+# CI uses the latest stable, whose clippy may know lints an older local one
+# does not, and `deny` sees crates yanked since the local index was fetched.
 #
 #     ./scripts/gates.sh            every gate
 #     ./scripts/gates.sh test       one gate: fmt, clippy, test, tts-only, deny

@@ -30,7 +30,7 @@ impl Voice {
         if bytes.len() != PACK_LEN * 4 {
             return Err(Error::Voice(format!("a voice pack is {} bytes, got {}", PACK_LEN * 4, bytes.len())));
         }
-        let pack = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let pack = bytes.as_chunks::<4>().0.iter().copied().map(f32::from_le_bytes).collect();
         Ok(Self { pack })
     }
 
