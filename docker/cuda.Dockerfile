@@ -4,11 +4,16 @@
 # through whisper.cpp's CUDA backend.
 #
 #     docker build -f docker/cuda.Dockerfile -t loqui:cuda .
-#     docker run --gpus all --network host -v ~/.cache/loqui:/root/.cache/loqui \
-#         loqui:cuda serve --listen loopback:8100 --gpu cuda
+#     docker run -d --name loqui --gpus all --network host \
+#         --user "$(id -u):$(id -g)" --group-add "$(getent group video | cut -d: -f3)" \
+#         -e XDG_CONFIG_HOME=/config -e LOQUI_CACHE_DIR=/cache \
+#         -v ~/.config/loqui:/config/loqui -v ~/.cache/loqui:/cache \
+#         loqui:cuda serve --listen loopback:8100 --gpu cuda --preload
 #
 # Host networking keeps the listener on the host's own loopback, so loqui's
 # exposure rules mean what they say; publishing a port would need all:PORT.
+# Running as yourself keeps the token (~/.config/loqui/token) and the model
+# cache yours; the `video` group is what the GPU device nodes allow.
 #
 # The `toolchain` stage doubles as a CUDA dev shell, for hosts whose own
 # toolkit is missing or is not CUDA 13:

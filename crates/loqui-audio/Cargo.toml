@@ -25,3 +25,4 @@ symphonia = { version = "0.6", features = ["mp3", "isomp4", "aac"] }
 rubato = "=4"
 
 thiserror = "2"
+opus-rs = "0.1.34"

@@ -3,11 +3,12 @@
 //! Out: synthesized speech is encoded as WAV (16-bit PCM), FLAC or raw
 //! 16-bit PCM, the formats an OpenAI-compatible `/audio/speech` client asks
 //! for. In: uploaded audio in any common container (WAV, FLAC, MP3, Ogg
-//! Vorbis, MP4/AAC) is decoded, mixed to mono and resampled for Whisper.
-//! Everything here is pure Rust.
+//! Vorbis or Opus, WebM/Opus, MP4/AAC) is decoded, mixed to mono and
+//! resampled for Whisper. Everything here is pure Rust.
 
 mod decode;
 mod encode;
+mod opus;
 
 pub use decode::{WHISPER_RATE, decode, decode_mono_16k, resample};
 pub use encode::encode;

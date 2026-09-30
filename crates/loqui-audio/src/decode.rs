@@ -9,13 +9,15 @@ use std::io::Cursor;
 
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{Fft, FixedSync, Resampler};
-use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
+use crate::opus::{self, Opus};
 use crate::{Error, Pcm};
 
 /// The sample rate Whisper consumes.
@@ -38,9 +40,16 @@ pub fn decode(bytes: &[u8], max_secs: Option<u64>) -> Result<Pcm, Error> {
             .clone();
         (track.id, params)
     };
-    let mut decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(&params, &AudioDecoderOptions::default())
-        .map_err(|e| Error::Decode(format!("unsupported codec: {e}")))?;
+    let mut decoder = if params.codec == CODEC_ID_OPUS {
+        let channels = params.channels.as_ref().map_or(1, |c| c.count());
+        Decoder::Opus(Box::new(Opus::new(channels, params.extra_data.as_deref())?))
+    } else {
+        Decoder::Symphonia(
+            symphonia::default::get_codecs()
+                .make_audio_decoder(&params, &AudioDecoderOptions::default())
+                .map_err(|e| Error::Decode(format!("unsupported codec: {e}")))?,
+        )
+    };
 
     let mut mono: Vec<f32> = Vec::new();
     let mut interleaved: Vec<f32> = Vec::new();
@@ -55,29 +64,42 @@ pub fn decode(bytes: &[u8], max_secs: Option<u64>) -> Result<Pcm, Error> {
         if packet.track_id != track_id {
             continue;
         }
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            // A corrupt packet is skipped, as every player skips it.
-            Err(SymphoniaError::DecodeError(_)) => continue,
-            Err(SymphoniaError::ResetRequired) => {
-                decoder.reset();
-                continue;
+        // A corrupt packet is skipped, as every player skips it.
+        let (samples, channels, packet_rate): (&[f32], usize, u32) = match &mut decoder {
+            Decoder::Symphonia(decoder) => {
+                let decoded = match decoder.decode(&packet) {
+                    Ok(decoded) => decoded,
+                    Err(SymphoniaError::DecodeError(_)) => continue,
+                    Err(SymphoniaError::ResetRequired) => {
+                        decoder.reset();
+                        continue;
+                    }
+                    Err(e) => return Err(Error::Decode(e.to_string())),
+                };
+                decoded.copy_to_vec_interleaved::<f32>(&mut interleaved);
+                (&interleaved, decoded.num_planes(), decoded.spec().rate())
             }
-            Err(e) => return Err(Error::Decode(e.to_string())),
+            Decoder::Opus(opus) => {
+                let channels = opus.channels();
+                // Priming comes from the OpusHead, so the demuxer's
+                // trim_start (the same priming, where Ogg sets it) is not
+                // applied twice. trim_end is in 48 kHz samples where set.
+                match opus.decode(&packet.data, packet.trim_end.get() as usize) {
+                    Some(samples) => (samples, channels, opus::RATE),
+                    None => continue,
+                }
+            }
         };
-        let channels = decoded.num_planes();
         if channels == 0 {
             continue;
         }
-        let packet_rate = decoded.spec().rate();
         match rate {
             None => rate = Some(packet_rate),
             Some(r) if r != packet_rate => return Err(Error::Decode("sample rate changes mid-stream".into())),
             Some(_) => {}
         }
-        decoded.copy_to_vec_interleaved::<f32>(&mut interleaved);
         let scale = 1.0 / channels as f32;
-        mono.extend(interleaved.chunks_exact(channels).map(|frame| frame.iter().sum::<f32>() * scale));
+        mono.extend(samples.chunks_exact(channels).map(|frame| frame.iter().sum::<f32>() * scale));
         if let Some(max) = max_secs
             && mono.len() as u64 > max * u64::from(packet_rate)
         {
@@ -88,6 +110,13 @@ pub fn decode(bytes: &[u8], max_secs: Option<u64>) -> Result<Pcm, Error> {
         Some(rate) if !mono.is_empty() => Ok(Pcm { samples: mono, rate }),
         _ => Err(Error::Decode("no audio frames".into())),
     }
+}
+
+/// What turns packets into samples: symphonia's own codecs, or Opus, which
+/// symphonia demuxes but cannot decode.
+enum Decoder {
+    Symphonia(Box<dyn AudioDecoder>),
+    Opus(Box<Opus>),
 }
 
 /// Resamples to `target` Hz with a band-limited FFT resampler.
@@ -136,6 +165,66 @@ mod tests {
         let wav = encode(&pcm, Format::Wav).unwrap();
         assert!(matches!(decode(&wav, Some(2)), Err(Error::TooLong { max_secs: 2 })));
         assert!(decode(&wav, Some(3)).is_ok());
+    }
+
+    /// Frequency by zero crossings, and RMS, of a mono signal.
+    fn tone(pcm: &Pcm) -> (f32, f32) {
+        let crossings = pcm.samples.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+        let freq = crossings as f32 / 2.0 / pcm.duration_secs() as f32;
+        let rms = (pcm.samples.iter().map(|s| s * s).sum::<f32>() / pcm.samples.len() as f32).sqrt();
+        (freq, rms)
+    }
+
+    // Fixtures: half a second of a 440 Hz sine at amplitude 1/8 (RMS 0.088),
+    // encoded by ffmpeg's libopus.
+    fn assert_is_the_sine(pcm: &Pcm) {
+        assert_eq!(pcm.rate, 48_000);
+        assert!((0.49..0.52).contains(&pcm.duration_secs()), "duration {}", pcm.duration_secs());
+        let (freq, rms) = tone(pcm);
+        assert!((420.0..460.0).contains(&freq), "frequency {freq}");
+        assert!((0.06..0.12).contains(&rms), "rms {rms}");
+    }
+
+    #[test]
+    fn decodes_ogg_opus_as_voice_notes_arrive() {
+        assert_is_the_sine(&decode(include_bytes!("../tests/data/sine440-mono.ogg"), None).unwrap());
+    }
+
+    #[test]
+    fn decodes_webm_opus_as_browsers_record_it_downmixing_stereo() {
+        assert_is_the_sine(&decode(include_bytes!("../tests/data/sine440-stereo.webm"), None).unwrap());
+    }
+
+    #[test]
+    fn decodes_every_frame_of_multi_frame_silk_packets() {
+        // 40 ms SILK packets: opus-rs before 0.1.33 decoded their second
+        // 20 ms frame as silence (restsend/opus-rs#27).
+        let pcm = decode(include_bytes!("../tests/data/sine440-silk40ms.ogg"), None).unwrap();
+        assert_is_the_sine(&pcm);
+        let window = 960; // 20 ms at 48 kHz
+        for (i, frame) in pcm.samples.chunks_exact(window).enumerate().skip(3) {
+            let rms = (frame.iter().map(|s| s * s).sum::<f32>() / window as f32).sqrt();
+            assert!(rms > 0.03, "20 ms window {i} is silent (rms {rms})");
+        }
+    }
+
+    #[test]
+    fn opus_drops_encoder_priming_and_padding_exactly_as_libopus_does() {
+        // libopus (through ffmpeg) decodes every fixture to 24,000 samples.
+        for bytes in [&include_bytes!("../tests/data/sine440-mono.ogg")[..], &include_bytes!("../tests/data/sine440-silk40ms.ogg")[..]] {
+            assert_eq!(decode(bytes, None).unwrap().samples.len(), 24_000);
+        }
+        // WebM's end padding (DiscardPadding, 648 samples here) is parsed by
+        // symphonia 0.6 but not passed on, so up to 13.5 ms of trailing
+        // near-silence remains. The priming is still dropped exactly.
+        let webm = decode(include_bytes!("../tests/data/sine440-stereo.webm"), None).unwrap();
+        assert!((24_000..=24_648).contains(&webm.samples.len()), "{}", webm.samples.len());
+    }
+
+    #[test]
+    fn enforces_the_length_cap_on_opus_too() {
+        let ogg = include_bytes!("../tests/data/sine440-mono.ogg");
+        assert!(matches!(decode(ogg, Some(0)), Err(Error::TooLong { max_secs: 0 })));
     }
 
     #[test]
