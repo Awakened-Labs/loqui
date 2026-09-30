@@ -140,6 +140,8 @@ pub(crate) async fn run(
             }
         };
         let router = router.clone();
+        // Without TLS, `Tls` is an empty type and therefore `Copy`.
+        #[cfg_attr(not(feature = "tls"), allow(clippy::clone_on_copy))]
         let tls = tls.clone();
         tokio::spawn(async move {
             let _permit = permit;
@@ -213,17 +215,81 @@ where
 
 #[cfg(feature = "tls")]
 pub(crate) fn tls_acceptor(cert: &Path, key: &Path) -> Result<tokio_rustls::TlsAcceptor, Error> {
-    use rustls_pemfile::{certs, private_key};
+    use tokio_rustls::rustls::pki_types::pem::{self, PemObject};
+    use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
     let read = |p: &Path| std::fs::read(p).map_err(|e| Error::Config(format!("{}: {e}", p.display())));
     crate::auth::check_private_file(key).map_err(|e| Error::Config(format!("TLS key: {e}")))?;
-    let chain =
-        certs(&mut read(cert)?.as_slice()).collect::<Result<Vec<_>, _>>().map_err(|e| Error::Config(format!("{}: {e}", cert.display())))?;
-    let key = private_key(&mut read(key)?.as_slice())
-        .map_err(|e| Error::Config(format!("{}: {e}", key.display())))?
-        .ok_or_else(|| Error::Config(format!("{} holds no private key", key.display())))?;
+    let chain = CertificateDer::pem_slice_iter(&read(cert)?)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| Error::Config(format!("{}: {e}", cert.display())))?;
+    let key = PrivateKeyDer::from_pem_slice(&read(key)?).map_err(|e| match e {
+        pem::Error::NoItemsFound => Error::Config(format!("{} holds no private key", key.display())),
+        e => Error::Config(format!("{}: {e}", key.display())),
+    })?;
     let config = tokio_rustls::rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(chain, key)
         .map_err(|e| Error::Config(format!("TLS: {e}")))?;
     Ok(tokio_rustls::TlsAcceptor::from(Arc::new(config)))
+}
+
+#[cfg(all(test, feature = "tls", unix))]
+mod tls_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    // A throwaway self-signed pair for loqui.test, made for these tests and
+    // trusted by nothing.
+    const CERT: &str = include_str!("../tests/data/test-cert.pem");
+    const KEY: &str = include_str!("../tests/data/test-key.pem");
+
+    /// Writes a certificate and a key (with `key_mode`) and returns their paths.
+    fn pair(name: &str, key: &str, key_mode: u32) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("loqui-tls-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (cert_path, key_path) = (dir.join("cert.pem"), dir.join("key.pem"));
+        std::fs::write(&cert_path, CERT).unwrap();
+        std::fs::write(&key_path, key).unwrap();
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(key_mode)).unwrap();
+        (cert_path, key_path)
+    }
+
+    fn refusal(cert: &Path, key: &Path) -> String {
+        match tls_acceptor(cert, key) {
+            Ok(_) => panic!("accepted"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_certificate_and_its_private_key_load() {
+        let (cert, key) = pair("ok", KEY, 0o600);
+        assert!(tls_acceptor(&cert, &key).is_ok());
+    }
+
+    #[test]
+    fn a_key_file_without_a_key_is_named() {
+        let (cert, key) = pair("nokey", CERT, 0o600);
+        assert!(refusal(&cert, &key).contains("holds no private key"));
+    }
+
+    #[test]
+    fn a_key_others_can_read_is_refused() {
+        let (cert, key) = pair("mode", KEY, 0o640);
+        assert!(refusal(&cert, &key).contains("chmod 600"));
+    }
+
+    #[test]
+    fn a_key_that_does_not_match_the_certificate_is_refused() {
+        // A valid P-256 key, but not the one the certificate was issued for.
+        const OTHER: &str = "-----BEGIN PRIVATE KEY-----\n\
+            MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgevZzL1gdAFr88hb2\n\
+            OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r\n\
+            1RTwjmYSi9R/zpBnuQ4EiMnCqfMPWiZqB4QdbAd0E7oH50VpuZ1P087G\n\
+            -----END PRIVATE KEY-----\n";
+        let (cert, key) = pair("mismatch", OTHER, 0o600);
+        assert!(refusal(&cert, &key).contains("KeyMismatch"));
+    }
 }

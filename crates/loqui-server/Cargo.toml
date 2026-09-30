@@ -40,7 +40,6 @@ tracing = "0.1"
 
 # TLS for network listeners.
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
-rustls-pemfile = { version = "2", optional = true }
 
 [features]
 default = []
@@ -48,7 +47,7 @@ whisper = ["loqui/whisper"]
 cuda = ["loqui/cuda"]
 # Serve HTTPS on network listeners. Uses rustls with the `ring` provider
 # (C and assembly are compiled, hence a feature).
-tls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
+tls = ["dep:tokio-rustls"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
