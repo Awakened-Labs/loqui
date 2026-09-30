@@ -33,8 +33,10 @@ serde_json = "1"
 thiserror = "2"
 
 [features]
-# Run Kokoro on an NVIDIA GPU through ONNX Runtime's CUDA provider.
-cuda = ["ort/cuda"]
+# Run Kokoro on an NVIDIA GPU through ONNX Runtime's CUDA provider. The
+# provider is a pair of shared libraries ONNX Runtime loads from beside the
+# executable; `copy-dylibs` links them into the target directory.
+cuda = ["ort/cuda", "ort/copy-dylibs"]
 # Link against a system ONNX Runtime at run time instead of the downloaded
 # static build (for distributions that package onnxruntime).
 load-dynamic = ["ort/load-dynamic"]

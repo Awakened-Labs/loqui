@@ -42,7 +42,45 @@ points of phoneme error; see the log below.
     python3 tools/parity/e2e.py transcribe container-wavs/ container.txt   # likewise loqui-wavs
     python3 tools/parity/e2e.py wer corpus.txt container.txt
 
+## Speech to text
+
+The container's audio for the corpus, transcribed by loqui-whisper on the
+GPU inside the CUDA dev image (`docker/cuda.Dockerfile`, target `toolchain`):
+
+    docker run --rm --gpus all -v "$PWD":/src:ro -v loqui-cuda13-target:/target \
+        -v loqui-cuda-registry:/usr/local/cargo/registry loqui:cuda-dev \
+        cargo build --release --locked -p loqui-whisper --features cuda --example transcribe
+    docker run --rm --gpus all -v ~/.cache/loqui:/models:ro -v "$PWD/parity-out":/data \
+        -v loqui-cuda13-target:/target loqui:cuda-dev /target/release/examples/transcribe \
+        /models/.../ggml-large-v3-turbo.bin --gpu 0 --language en --dir /data/container-wavs --out /data/stt-loqui.txt
+    python3 tools/parity/e2e.py wer corpus.txt stt-loqui.txt
+
 ## Results log
+
+### 2026-09-30: CUDA (docker/cuda.Dockerfile, RTX 2070 Super)
+
+Whisper: the 250 container-synthesised clips (552 s) from the end-to-end run
+below, large-v3-turbo, beam 5, temperature 0, English:
+
+| Transcriber | WER vs the text | Real-time factor |
+|---|---|---|
+| faster-whisper (open-speech) | 2.28% | not measured |
+| loqui-whisper, whisper.cpp on CUDA 12.8 | 2.19% | 0.162 |
+| loqui-whisper, CPU (laptop) | not run (too slow) | ~8 |
+
+The two transcribers differ on 0.37% of words (8 of 2,144). What remains
+against the text is formatting both share: "6:00 p.m." for "6 PM",
+"third" for "3rd", compounds ("bluefish", "drugstore"). Measured on a CUDA
+12.8 build; the image then moved to CUDA 13 (ONNX Runtime's provider needs
+it) and the run has not been repeated there yet.
+
+Kokoro, in the CUDA 13.0.2 image:
+
+| Check | Result |
+|---|---|
+| GPU vs CPU output, same text (6.8 s) | same length, correlation 0.998 |
+| `loqui serve --gpu cuda`, warm request | 4.46 s of audio in 0.41 s (real-time factor 0.09; CPU 0.30) |
+| GPU memory held by Kokoro fp32 | 1.1 GB |
 
 ### 2026-09-29: Kokoro on ONNX Runtime (loqui-kokoro)
 

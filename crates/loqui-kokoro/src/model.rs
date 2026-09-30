@@ -65,8 +65,8 @@ impl KokoroModel {
             Device::Cpu => {}
             #[cfg(feature = "cuda")]
             Device::Cuda(ordinal) => {
-                use ort::execution_providers::{CUDAExecutionProvider, ExecutionProvider};
-                let cuda = CUDAExecutionProvider::default().with_device_id(ordinal);
+                use ort::ep::{CUDA, ExecutionProvider};
+                let cuda = CUDA::default().with_device_id(ordinal);
                 if !cuda.is_available().unwrap_or(false) {
                     return Err(Error::Model("CUDA was requested but ONNX Runtime has no usable CUDA provider".into()));
                 }

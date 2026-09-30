@@ -1,9 +1,10 @@
 //! Transcribes audio files with a GGML Whisper model, for parity checks.
 //!
-//!     transcribe MODEL.bin FILE [FILE ...] [--language en] [--dir DIR --out OUT.txt]
+//!     transcribe MODEL.bin FILE [FILE ...] [--language en] [--gpu N] [--dir DIR --out OUT.txt]
 //!
 //! With `--dir`, every `NNNN.wav` in DIR is transcribed in name order and
-//! one line per file is written to OUT.txt, with one model load.
+//! one line per file is written to OUT.txt, with one model load. `--gpu N`
+//! needs the `cuda` or `vulkan` feature.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -17,12 +18,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options { language: flag("--language"), ..Options::default() };
 
     let started = Instant::now();
-    let whisper = Whisper::load(Path::new(model), Device::Cpu)?;
+    let device = flag("--gpu").map(|n| n.parse()).transpose()?.map_or(Device::Cpu, Device::Gpu);
+    let whisper = Whisper::load(Path::new(model), device)?;
     eprintln!("model loaded in {:.1}s (multilingual: {})", started.elapsed().as_secs_f32(), whisper.is_multilingual());
 
     let mut files: Vec<PathBuf> = match flag("--dir") {
         Some(dir) => std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect(),
-        None => args.iter().skip(1).filter(|a| !a.starts_with("--")).map(PathBuf::from).collect(),
+        None => args.iter().skip(1).filter(|a| !a.starts_with("--") && Path::new(a).is_file()).map(PathBuf::from).collect(),
     };
     files.sort();
     let (mut lines, mut audio_secs, started) = (Vec::new(), 0.0, Instant::now());

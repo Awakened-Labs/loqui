@@ -1,0 +1,7 @@
+/target
+/parity-out
+/.git
+/docker
+/docs
+/tools
+**/*.rs.bk

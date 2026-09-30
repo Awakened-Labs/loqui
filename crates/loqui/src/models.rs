@@ -96,8 +96,13 @@ pub(crate) fn private_dir(dir: &Path) -> Result<(), Error> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| Error::Io(format!("securing {}: {e}", dir.display())))?;
+        // Already private is left alone, so a read-only cache (a mounted
+        // volume of fetched models) still works.
+        let mode = std::fs::metadata(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?.permissions().mode();
+        if mode & 0o777 != 0o700 {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| Error::Io(format!("securing {}: {e}", dir.display())))?;
+        }
     }
     Ok(())
 }
