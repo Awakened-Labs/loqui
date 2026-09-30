@@ -381,8 +381,7 @@ impl Tensors {
         let header_len = u64::from_le_bytes(header_len.try_into().map_err(|_| bad("header length"))?) as usize;
         let header = bytes.get(8..8 + header_len).ok_or_else(|| bad("truncated header"))?;
         let data = &bytes[8 + header_len..];
-        let header: HashMap<String, serde_json::Value> =
-            serde_json::from_slice(header).map_err(|e| Error::Weights(e.to_string()))?;
+        let header: HashMap<String, serde_json::Value> = serde_json::from_slice(header).map_err(|e| Error::Weights(e.to_string()))?;
 
         let mut tensors = HashMap::new();
         for (name, meta) in header {

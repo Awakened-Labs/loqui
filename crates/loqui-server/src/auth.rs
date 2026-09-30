@@ -90,9 +90,7 @@ impl Tokens {
     /// token per client and tokens can be rotated without downtime.
     fn load_file(path: &Path, source: TokenSource) -> Result<Self, Error> {
         check_private_file(path)?;
-        let text = Zeroizing::new(
-            std::fs::read_to_string(path).map_err(|e| Error::Token(format!("reading {}: {e}", path.display())))?,
-        );
+        let text = Zeroizing::new(std::fs::read_to_string(path).map_err(|e| Error::Token(format!("reading {}: {e}", path.display())))?);
         let mut digests = Vec::new();
         for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
             validate(line)?;
@@ -117,9 +115,7 @@ impl Tokens {
 
     /// Checks an `Authorization` header value.
     pub fn accepts_header(&self, header: Option<&str>) -> bool {
-        header
-            .and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer ")))
-            .is_some_and(|token| self.accepts(token.trim()))
+        header.and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer "))).is_some_and(|token| self.accepts(token.trim()))
     }
 }
 

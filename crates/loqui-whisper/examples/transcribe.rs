@@ -23,7 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("model loaded in {:.1}s (multilingual: {})", started.elapsed().as_secs_f32(), whisper.is_multilingual());
 
     let mut files: Vec<PathBuf> = match flag("--dir") {
-        Some(dir) => std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect(),
+        Some(dir) => {
+            std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect()
+        }
         None => args.iter().skip(1).filter(|a| !a.starts_with("--") && Path::new(a).is_file()).map(PathBuf::from).collect(),
     };
     files.sort();

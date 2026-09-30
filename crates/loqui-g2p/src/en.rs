@@ -30,8 +30,7 @@ static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^\)
 static VS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^vs\.?$").expect("vs pattern"));
 static NUMBER_SUFFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-z']+$").expect("suffix pattern"));
 static NOT_LETTERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z]+").expect("split pattern"));
-static DOUBLED_ING: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"([bcdgklmnprstvxz])\1ing$|cking$").expect("ing pattern"));
+static DOUBLED_ING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([bcdgklmnprstvxz])\1ing$|cking$").expect("ing pattern"));
 
 const SUBTOKEN_JUNKS: &str = "',-._‘’/";
 const PUNCTS: &str = ";:,.!?—…\"“”";
@@ -263,9 +262,7 @@ impl Lexicon {
         let mut out = String::new();
         for (k, run) in runs {
             let ps = match k {
-                Kind::Letters => self
-                    .get_word(&run, "NN", None, TokenContext::default())
-                    .or_else(|| word_fallback(&run)),
+                Kind::Letters => self.get_word(&run, "NN", None, TokenContext::default()).or_else(|| word_fallback(&run)),
                 Kind::Digits => {
                     let mut words = Vec::new();
                     if run.len() > 1 && run.starts_with('0') {
@@ -311,10 +308,7 @@ impl Lexicon {
             return self.lookup(w, None, None, Some(ctx));
         }
         let stripped = word.trim_matches('.');
-        if stripped.contains('.')
-            && isalpha(&word.replace('.', ""))
-            && word.split('.').map(len).max().unwrap_or(0) < 3
-        {
+        if stripped.contains('.') && isalpha(&word.replace('.', "")) && word.split('.').map(len).max().unwrap_or(0) < 3 {
             return self.get_nnp(word);
         }
         match word {
@@ -470,11 +464,7 @@ impl Lexicon {
         }
         let stem = if !word.ends_with("dd") && self.is_known(drop_last(word, 1)) {
             drop_last(word, 1)
-        } else if len(word) > 4
-            && word.ends_with("ed")
-            && !word.ends_with("eed")
-            && self.is_known(drop_last(word, 2))
-        {
+        } else if len(word) > 4 && word.ends_with("ed") && !word.ends_with("eed") && self.is_known(drop_last(word, 2)) {
             drop_last(word, 2)
         } else {
             return None;
@@ -771,11 +761,7 @@ fn numeric_if_needed(c: char) -> char {
     // Unicode decimal digits come in contiguous 0-9 runs.
     const ZEROS: [u32; 12] = [0x660, 0x6F0, 0x7C0, 0x966, 0x9E6, 0xA66, 0xAE6, 0xB66, 0xBE6, 0xC66, 0xCE6, 0xD66];
     let code = c as u32;
-    ZEROS
-        .iter()
-        .find(|&&z| (z..z + 10).contains(&code))
-        .and_then(|z| char::from_digit(code - z, 10))
-        .unwrap_or(c)
+    ZEROS.iter().find(|&&z| (z..z + 10).contains(&code)).and_then(|z| char::from_digit(code - z, 10)).unwrap_or(c)
 }
 
 fn is_number(word: &str, is_head: bool) -> bool {
@@ -834,7 +820,11 @@ pub(crate) fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
     let phonemes = unk.map(|unk| {
         let mut ps = String::new();
         for tk in tokens {
-            if tk.prespace && !ps.is_empty() && !last_char(&ps).is_some_and(char::is_whitespace) && tk.phonemes.as_deref().is_some_and(|p| !p.is_empty()) {
+            if tk.prespace
+                && !ps.is_empty()
+                && !last_char(&ps).is_some_and(char::is_whitespace)
+                && tk.phonemes.as_deref().is_some_and(|p| !p.is_empty())
+            {
                 ps.push(' ');
             }
             ps.push_str(tk.phonemes.as_deref().unwrap_or(unk));
@@ -1026,7 +1016,9 @@ fn retokenize(tokens: Vec<MToken>) -> Vec<Word> {
 
             if tk.alias.is_some() || tk.phonemes.is_some() {
                 words.push(Word::One(tk));
-            } else if let Some(Word::Many(group)) = words.last_mut().filter(|w| matches!(w, Word::Many(g) if g.last().is_some_and(|t| t.whitespace.is_empty()))) {
+            } else if let Some(Word::Many(group)) =
+                words.last_mut().filter(|w| matches!(w, Word::Many(g) if g.last().is_some_and(|t| t.whitespace.is_empty())))
+            {
                 tk.is_head = false;
                 group.push(tk);
             } else if tk.whitespace.is_empty() {
@@ -1068,7 +1060,15 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     let kinds: std::collections::HashSet<u8> = text
         .chars()
         .filter(|c| !SUBTOKEN_JUNKS.contains(*c))
-        .map(|c| if c.is_alphabetic() { 0 } else if c.is_ascii_digit() { 1 } else { 2 })
+        .map(|c| {
+            if c.is_alphabetic() {
+                0
+            } else if c.is_ascii_digit() {
+                1
+            } else {
+                2
+            }
+        })
         .collect();
     let prespace = text.contains(' ') || text.contains('/') || kinds.len() > 1;
     let last = tokens.len() - 1;
@@ -1140,11 +1140,8 @@ pub(crate) fn g2p(
                 let mut should_fallback = false;
                 while left < right {
                     let span = &group[left..right];
-                    let merged = if span.iter().any(|t| t.alias.is_some() || t.phonemes.is_some()) {
-                        None
-                    } else {
-                        Some(merge_tokens(span, None))
-                    };
+                    let merged =
+                        if span.iter().any(|t| t.alias.is_some() || t.phonemes.is_some()) { None } else { Some(merge_tokens(span, None)) };
                     let ps = merged.as_ref().and_then(|tk| lexicon.phonemize(tk, ctx));
                     if let (Some(ps), Some(tk)) = (ps, merged.as_ref()) {
                         ctx = token_context(ctx, Some(&ps), tk);

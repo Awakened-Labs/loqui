@@ -11,17 +11,9 @@ use crate::{Dialect, Error};
 
 pub(crate) fn load(dialect: Dialect) -> Result<Lexicon, Error> {
     let (gold, silver) = match dialect {
-        Dialect::American => (
-            include_str!("../data/misaki-us_gold.json"),
-            include_str!("../data/misaki-us_silver.json"),
-        ),
-        Dialect::British => (
-            include_str!("../data/misaki-gb_gold.json"),
-            include_str!("../data/misaki-gb_silver.json"),
-        ),
+        Dialect::American => (include_str!("../data/misaki-us_gold.json"), include_str!("../data/misaki-us_silver.json")),
+        Dialect::British => (include_str!("../data/misaki-gb_gold.json"), include_str!("../data/misaki-gb_silver.json")),
     };
-    let parse = |json: &str| {
-        serde_json::from_str::<HashMap<String, Entry>>(json).map_err(|e| Error::Weights(format!("lexicon: {e}")))
-    };
+    let parse = |json: &str| serde_json::from_str::<HashMap<String, Entry>>(json).map_err(|e| Error::Weights(format!("lexicon: {e}")));
     Ok(Lexicon::new(dialect == Dialect::British, parse(gold)?, parse(silver)?))
 }

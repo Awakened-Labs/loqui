@@ -22,8 +22,7 @@ pub const SAMPLE_RATE: u32 = 24_000;
 /// Phoneme to token id, from hexgrad/Kokoro-82M's `config.json` (the table
 /// `KModel` uses; 114 symbols, id 0 reserved for padding).
 static VOCAB: LazyLock<HashMap<char, i64>> = LazyLock::new(|| {
-    let table: HashMap<String, i64> =
-        serde_json::from_str(include_str!("../data/vocab.json")).expect("embedded vocab is valid JSON");
+    let table: HashMap<String, i64> = serde_json::from_str(include_str!("../data/vocab.json")).expect("embedded vocab is valid JSON");
     table.into_iter().filter_map(|(k, v)| Some((k.chars().next()?, v))).collect()
 });
 
@@ -94,19 +93,15 @@ impl KokoroModel {
         if count == 0 {
             return Ok(Vec::new());
         }
-        let ids: Vec<i64> = std::iter::once(0)
-            .chain(phonemes.chars().filter_map(|c| VOCAB.get(&c).copied()))
-            .chain(std::iter::once(0))
-            .collect();
+        let ids: Vec<i64> =
+            std::iter::once(0).chain(phonemes.chars().filter_map(|c| VOCAB.get(&c).copied())).chain(std::iter::once(0)).collect();
         let ort_err = |e: ort::Error| Error::Model(e.to_string());
         let input_ids = Tensor::from_array(([1usize, ids.len()], ids)).map_err(ort_err)?;
         let style = Tensor::from_array(([1usize, STYLE_DIM], voice.style(count).to_vec())).map_err(ort_err)?;
         let speed = Tensor::from_array(([1usize], vec![speed])).map_err(ort_err)?;
 
         let mut session = self.session.lock().map_err(|_| Error::Model("model lock poisoned".into()))?;
-        let outputs = session
-            .run(ort::inputs!["input_ids" => input_ids, "style" => style, "speed" => speed])
-            .map_err(ort_err)?;
+        let outputs = session.run(ort::inputs!["input_ids" => input_ids, "style" => style, "speed" => speed]).map_err(ort_err)?;
         let (_, samples) = outputs["waveform"].try_extract_tensor::<f32>().map_err(ort_err)?;
         Ok(samples.to_vec())
     }

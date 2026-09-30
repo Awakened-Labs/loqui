@@ -133,10 +133,7 @@ impl G2p {
     /// `[word](/phonemes/)` overrides a pronunciation, `[word](+2)` sets
     /// stress, and `[5](#a#)` passes number-reading flags.
     pub fn phonemize(&self, text: &str) -> String {
-        self.run(text, UNKNOWN)
-            .into_iter()
-            .map(|tk| tk.phonemes.unwrap_or_else(|| UNKNOWN.to_owned()) + &tk.whitespace)
-            .collect()
+        self.run(text, UNKNOWN).into_iter().map(|tk| tk.phonemes.unwrap_or_else(|| UNKNOWN.to_owned()) + &tk.whitespace).collect()
     }
 
     /// The same conversion, one token per spoken word, with nothing marked
@@ -243,7 +240,10 @@ mod tests {
         let g2p = G2p::new(Dialect::American, OovFallback::Neural).unwrap();
         let tokens = g2p.tokens("It costs $5.");
         let shown: Vec<(&str, &str, bool)> = tokens.iter().map(|t| (t.text.as_str(), t.phonemes.as_str(), t.whitespace)).collect();
-        assert_eq!(shown, [("It", "ˌɪt", true), ("costs", "kˈɔsts", true), ("$", "", false), ("5", "fˈIv dˈɑləɹz", false), (".", ".", false)]);
+        assert_eq!(
+            shown,
+            [("It", "ˌɪt", true), ("costs", "kˈɔsts", true), ("$", "", false), ("5", "fˈIv dˈɑləɹz", false), (".", ".", false)]
+        );
     }
 
     #[test]

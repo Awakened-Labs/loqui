@@ -79,7 +79,10 @@ fn bind_unix(path: &Path) -> Result<UnixListener, Error> {
         {
             use std::os::unix::fs::{FileTypeExt, MetadataExt};
             if !meta.file_type().is_socket() || meta.uid() != crate::fs::current_uid() {
-                return Err(Error::Config(format!("{} exists and is not a socket owned by this user; refusing to replace it", path.display())));
+                return Err(Error::Config(format!(
+                    "{} exists and is not a socket owned by this user; refusing to replace it",
+                    path.display()
+                )));
             }
         }
         if std::os::unix::net::UnixStream::connect(path).is_ok() {
@@ -104,7 +107,13 @@ pub(crate) type Tls = Option<tokio_rustls::TlsAcceptor>;
 pub(crate) type Tls = Option<std::convert::Infallible>;
 
 /// Serves `router` on `bound` until `shutdown` resolves.
-pub(crate) async fn run(bound: Bound, router: Router, tls: Tls, max_connections: usize, shutdown: impl Future<Output = ()>) -> Result<(), Error> {
+pub(crate) async fn run(
+    bound: Bound,
+    router: Router,
+    tls: Tls,
+    max_connections: usize,
+    shutdown: impl Future<Output = ()>,
+) -> Result<(), Error> {
     let connections = Arc::new(Semaphore::new(max_connections));
     tokio::pin!(shutdown);
     let socket_path = match &bound {
@@ -207,9 +216,8 @@ pub(crate) fn tls_acceptor(cert: &Path, key: &Path) -> Result<tokio_rustls::TlsA
     use rustls_pemfile::{certs, private_key};
     let read = |p: &Path| std::fs::read(p).map_err(|e| Error::Config(format!("{}: {e}", p.display())));
     crate::auth::check_private_file(key).map_err(|e| Error::Config(format!("TLS key: {e}")))?;
-    let chain = certs(&mut read(cert)?.as_slice())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| Error::Config(format!("{}: {e}", cert.display())))?;
+    let chain =
+        certs(&mut read(cert)?.as_slice()).collect::<Result<Vec<_>, _>>().map_err(|e| Error::Config(format!("{}: {e}", cert.display())))?;
     let key = private_key(&mut read(key)?.as_slice())
         .map_err(|e| Error::Config(format!("{}: {e}", key.display())))?
         .ok_or_else(|| Error::Config(format!("{} holds no private key", key.display())))?;

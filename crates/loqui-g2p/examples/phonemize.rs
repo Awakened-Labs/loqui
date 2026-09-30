@@ -32,8 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if has("--tokens") {
         let tokenizer = Tokenizer::english()?;
         for line in stdin.lock().lines() {
-            let tokens: Vec<(String, bool)> =
-                tokenizer.tokenize(&line?).into_iter().map(|t| (t.text, t.space_after)).collect();
+            let tokens: Vec<(String, bool)> = tokenizer.tokenize(&line?).into_iter().map(|t| (t.text, t.space_after)).collect();
             writeln!(out, "{}", serde_json::to_string(&tokens)?)?;
         }
     } else if has("--word") {

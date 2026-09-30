@@ -119,7 +119,10 @@ struct SpeechBody {
     speed: Option<f32>,
 }
 
-async fn speech(State(state): State<Arc<AppState>>, body: Result<Json<SpeechBody>, axum::extract::rejection::JsonRejection>) -> Result<Response, ApiError> {
+async fn speech(
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<SpeechBody>, axum::extract::rejection::JsonRejection>,
+) -> Result<Response, ApiError> {
     let Json(body) = body.map_err(|e| {
         // Keep the rejection's own status: 413 for an oversized body, 415
         // for a missing JSON content type, 400/422 for malformed JSON.
@@ -152,7 +155,10 @@ async fn speech(State(state): State<Arc<AppState>>, body: Result<Json<SpeechBody
 /// Runs blocking inference off the async runtime, with a deadline. The
 /// work itself cannot be interrupted; past the deadline the caller gets 504
 /// and the result is discarded.
-async fn run_blocking<T: Send + 'static>(timeout: Duration, f: impl FnOnce() -> Result<T, loqui::Error> + Send + 'static) -> Result<T, ApiError> {
+async fn run_blocking<T: Send + 'static>(
+    timeout: Duration,
+    f: impl FnOnce() -> Result<T, loqui::Error> + Send + 'static,
+) -> Result<T, ApiError> {
     match tokio::time::timeout(timeout, tokio::task::spawn_blocking(f)).await {
         Ok(Ok(result)) => result.map_err(ApiError::from),
         Ok(Err(join)) => Err(ApiError::internal(format!("inference task failed: {join}"))),
@@ -189,7 +195,8 @@ mod stt {
                 "response_format" => upload.response_format = Some(field.text().await.map_err(bad)?),
                 "temperature" => {
                     let text = field.text().await.map_err(bad)?;
-                    let t: f32 = text.trim().parse().map_err(|_| ApiError::bad_request("invalid_temperature", "temperature must be a number"))?;
+                    let t: f32 =
+                        text.trim().parse().map_err(|_| ApiError::bad_request("invalid_temperature", "temperature must be a number"))?;
                     if !(0.0..=1.0).contains(&t) {
                         return Err(ApiError::bad_request("invalid_temperature", "temperature must be between 0 and 1"));
                     }
@@ -233,7 +240,12 @@ mod stt {
         let started = Instant::now();
         let engine = state.engine.clone();
         let result = run_blocking(state.request_timeout, move || engine.transcribe(&request)).await?;
-        tracing::info!(upload_bytes = bytes, audio_secs = result.duration, elapsed_ms = started.elapsed().as_millis() as u64, "transcription");
+        tracing::info!(
+            upload_bytes = bytes,
+            audio_secs = result.duration,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "transcription"
+        );
         Ok(render(&result, &format, task))
     }
 

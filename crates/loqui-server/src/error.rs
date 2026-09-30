@@ -26,12 +26,7 @@ impl ApiError {
     /// The same response for a missing and a wrong token, so the two
     /// cannot be told apart.
     pub fn unauthorized() -> Self {
-        Self::new(
-            StatusCode::UNAUTHORIZED,
-            "authentication_error",
-            "invalid_api_key",
-            "missing or invalid bearer token",
-        )
+        Self::new(StatusCode::UNAUTHORIZED, "authentication_error", "invalid_api_key", "missing or invalid bearer token")
     }
 
     pub fn forbidden(code: &'static str, message: impl Into<String>) -> Self {
@@ -56,7 +51,9 @@ impl From<loqui::Error> for ApiError {
             return Self::bad_request("invalid_request", e.to_string());
         }
         match e {
-            loqui::Error::Disabled(what) => Self::new(StatusCode::NOT_FOUND, "invalid_request_error", "not_enabled", format!("{what} is not enabled on this server")),
+            loqui::Error::Disabled(what) => {
+                Self::new(StatusCode::NOT_FOUND, "invalid_request_error", "not_enabled", format!("{what} is not enabled on this server"))
+            }
             other => {
                 // The detail can name cache paths; log it, return a summary.
                 tracing::error!(error = %other, "request failed");

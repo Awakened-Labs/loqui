@@ -32,9 +32,33 @@ pub const DEFAULT_VOICE: &str = "af_heart";
 /// crate can phonemize for. `f`/`m` in the second letter is the speaker's
 /// voice type as Kokoro labels it.
 pub const ENGLISH_VOICES: &[&str] = &[
-    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore", "af_nicole", "af_nova", "af_river",
-    "af_sarah", "af_sky", "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx",
-    "am_puck", "am_santa", "bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
     "bm_lewis",
 ];
 
@@ -75,10 +99,7 @@ pub fn parse_voice_spec(spec: &str) -> Result<Vec<(String, f32)>, Error> {
             let part = part.trim();
             let (id, weight) = match part.split_once('(') {
                 Some((id, rest)) => {
-                    let w = rest
-                        .strip_suffix(')')
-                        .and_then(|w| w.parse::<f32>().ok())
-                        .filter(|w| w.is_finite() && *w >= 0.0);
+                    let w = rest.strip_suffix(')').and_then(|w| w.parse::<f32>().ok()).filter(|w| w.is_finite() && *w >= 0.0);
                     (id, w.ok_or_else(|| Error::Voice("voice weights must be non-negative numbers, as in af_bella(2)+af_sky(1)".into()))?)
                 }
                 None => (part, 1.0),
@@ -110,14 +131,7 @@ impl std::fmt::Debug for Kokoro {
 
 impl Kokoro {
     pub fn new(model: KokoroModel, voices_dir: PathBuf, fallback: OovFallback) -> Self {
-        Self {
-            model,
-            voices_dir,
-            fallback,
-            american: OnceLock::new(),
-            british: OnceLock::new(),
-            voices: Mutex::new(HashMap::new()),
-        }
+        Self { model, voices_dir, fallback, american: OnceLock::new(), british: OnceLock::new(), voices: Mutex::new(HashMap::new()) }
     }
 
     /// Speaks `text` in `voice` (see [`parse_voice_spec`]) at `speed`
@@ -135,9 +149,8 @@ impl Kokoro {
             return Err(Error::Speed(speed));
         }
         let parts = parse_voice_spec(voice)?;
-        let dialect = Dialect::for_kokoro_voice(&parts[0].0).ok_or_else(|| {
-            Error::Voice(format!("{}: only American (a*) and British (b*) voices are supported", parts[0].0))
-        })?;
+        let dialect = Dialect::for_kokoro_voice(&parts[0].0)
+            .ok_or_else(|| Error::Voice(format!("{}: only American (a*) and British (b*) voices are supported", parts[0].0)))?;
         let style = self.voice(&parts)?;
         let mut audio = Vec::new();
         for ps in self.phoneme_chunks(text, dialect)? {
@@ -150,12 +163,7 @@ impl Kokoro {
     /// newlines before phonemizing, then chunks each line.
     pub fn phoneme_chunks(&self, text: &str, dialect: Dialect) -> Result<Vec<String>, Error> {
         let g2p = self.g2p(dialect)?;
-        Ok(text
-            .trim()
-            .split('\n')
-            .filter(|line| !line.trim().is_empty())
-            .flat_map(|line| chunks(g2p.tokens(line)))
-            .collect())
+        Ok(text.trim().split('\n').filter(|line| !line.trim().is_empty()).flat_map(|line| chunks(g2p.tokens(line))).collect())
     }
 
     fn g2p(&self, dialect: Dialect) -> Result<&G2p, Error> {
@@ -206,10 +214,7 @@ mod tests {
     #[test]
     fn voice_specs_parse_like_open_speech() {
         assert_eq!(parse_voice_spec("alloy").unwrap(), [("af_heart".to_owned(), 1.0)]);
-        assert_eq!(
-            parse_voice_spec("af_bella(2)+af_sky(1)").unwrap(),
-            [("af_bella".to_owned(), 2.0), ("af_sky".to_owned(), 1.0)]
-        );
+        assert_eq!(parse_voice_spec("af_bella(2)+af_sky(1)").unwrap(), [("af_bella".to_owned(), 2.0), ("af_sky".to_owned(), 1.0)]);
         assert_eq!(parse_voice_spec("af_bella+af_sky").unwrap().len(), 2);
     }
 

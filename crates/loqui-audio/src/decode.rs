@@ -102,8 +102,7 @@ pub fn resample(pcm: Pcm, target: u32) -> Result<Pcm, Error> {
     let mut out = vec![0.0f32; capacity];
     let input = InterleavedSlice::new(&pcm.samples[..], 1, len).map_err(|e| Error::Decode(e.to_string()))?;
     let mut output = InterleavedSlice::new_mut(&mut out[..], 1, capacity).map_err(|e| Error::Decode(e.to_string()))?;
-    let (_, written) =
-        resampler.process_all_into_buffer(&input, &mut output, len, None).map_err(|e| Error::Decode(e.to_string()))?;
+    let (_, written) = resampler.process_all_into_buffer(&input, &mut output, len, None).map_err(|e| Error::Decode(e.to_string()))?;
     out.truncate(written);
     Ok(Pcm { samples: out, rate: target })
 }

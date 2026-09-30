@@ -20,8 +20,12 @@ use crate::listen::Listen;
 #[derive(Debug, Clone)]
 pub enum Transport {
     /// A Unix socket peer, already checked against the allowed uids.
-    Unix { uid: u32 },
-    Tcp { peer: SocketAddr },
+    Unix {
+        uid: u32,
+    },
+    Tcp {
+        peer: SocketAddr,
+    },
 }
 
 pub struct Policy {

@@ -199,7 +199,8 @@ async fn unix_socket_is_private_and_needs_no_token_for_the_owner() {
     use std::os::unix::fs::PermissionsExt;
     let dir = TempDir::new("unix");
     let socket = dir.0.join("run").join("loqui.sock");
-    let config = ServerConfig { listen: Listen::Unix(Some(socket.clone())), token_file: Some(token_file(&dir.0)), ..ServerConfig::default() };
+    let config =
+        ServerConfig { listen: Listen::Unix(Some(socket.clone())), token_file: Some(token_file(&dir.0)), ..ServerConfig::default() };
     let (addr, stop) = start(config, &dir.0).await;
     assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
     assert_eq!(std::fs::metadata(socket.parent().unwrap()).unwrap().permissions().mode() & 0o777, 0o700);
@@ -252,7 +253,8 @@ async fn a_file_at_the_socket_path_is_never_replaced() {
     let socket = dir.0.join("run").join("loqui.sock");
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
     std::fs::write(&socket, "not a socket").unwrap();
-    let config = ServerConfig { listen: Listen::Unix(Some(socket.clone())), token_file: Some(token_file(&dir.0)), ..ServerConfig::default() };
+    let config =
+        ServerConfig { listen: Listen::Unix(Some(socket.clone())), token_file: Some(token_file(&dir.0)), ..ServerConfig::default() };
     let err = Server::bind(config, engine(&dir.0)).await.err().expect("bind must refuse").to_string();
     assert!(err.contains("refusing"), "{err}");
     assert_eq!(std::fs::read_to_string(&socket).unwrap(), "not a socket");

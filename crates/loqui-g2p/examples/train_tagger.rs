@@ -180,10 +180,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else if let Some(&class) = lookup.get(word.as_str()) {
                     classes[class as usize].clone()
                 } else {
-                    let features: Vec<u32> = tagger::features(i, word, &context, &prev, &prev2)
-                        .into_iter()
-                        .map(|f| model.feature(f))
-                        .collect();
+                    let features: Vec<u32> =
+                        tagger::features(i, word, &context, &prev, &prev2).into_iter().map(|f| model.feature(f)).collect();
                     let guess = model.predict(&features);
                     model.update(model.class_ids[truth], guess, &features);
                     classes[guess as usize].clone()

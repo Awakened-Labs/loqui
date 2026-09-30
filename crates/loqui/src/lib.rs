@@ -73,7 +73,10 @@ impl Error {
     /// Servers map this to 4xx rather than 5xx.
     pub fn is_client_error(&self) -> bool {
         matches!(self, Self::Invalid(_) | Self::InputTooLong { .. } | Self::Disabled(_))
-            || matches!(self, Self::Audio(loqui_audio::Error::Decode(_) | loqui_audio::Error::TooLong { .. } | loqui_audio::Error::UnsupportedFormat(_)))
+            || matches!(
+                self,
+                Self::Audio(loqui_audio::Error::Decode(_) | loqui_audio::Error::TooLong { .. } | loqui_audio::Error::UnsupportedFormat(_))
+            )
             || matches!(self, Self::Tts(loqui_kokoro::Error::Voice(_) | loqui_kokoro::Error::Speed(_)))
     }
 }
@@ -178,7 +181,9 @@ impl EngineBuilder {
     pub fn build(self) -> Result<Engine, Error> {
         let cache = match self.cache_dir {
             Some(dir) => dir,
-            None => default_cache_dir().ok_or_else(|| Error::Config("no cache directory: set HOME or XDG_CACHE_HOME, or pass one".into()))?,
+            None => {
+                default_cache_dir().ok_or_else(|| Error::Config("no cache directory: set HOME or XDG_CACHE_HOME, or pass one".into()))?
+            }
         };
         let downloads = self.downloads;
 

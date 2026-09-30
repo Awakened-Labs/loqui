@@ -39,20 +39,15 @@ fn wav(pcm: &Pcm) -> Vec<u8> {
 
 fn flac(pcm: &Pcm) -> Result<Vec<u8>, Error> {
     let samples: Vec<i32> = to_i16(&pcm.samples).map(i32::from).collect();
-    let config = flacenc::config::Encoder::default()
-        .into_verified()
-        .map_err(|(_, e)| Error::Encode(format!("FLAC config: {e:?}")))?;
+    let config = flacenc::config::Encoder::default().into_verified().map_err(|(_, e)| Error::Encode(format!("FLAC config: {e:?}")))?;
     let source = flacenc::source::MemSource::from_samples(&samples, 1, 16, pcm.rate as usize);
-    let mut stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
-        .map_err(|e| Error::Encode(format!("FLAC: {e:?}")))?;
+    let mut stream =
+        flacenc::encode_with_fixed_block_size(&config, source, config.block_size).map_err(|e| Error::Encode(format!("FLAC: {e:?}")))?;
     // flacenc 0.5 lets the short final block lower STREAMINFO's minimum
     // block size. The spec excludes the last block from that minimum, and
     // min != max marks the stream variable-blocksize, contradicting every
     // frame header: libFLAC warns, symphonia refuses the file. Restore it.
-    stream
-        .stream_info_mut()
-        .set_block_sizes(config.block_size, config.block_size)
-        .map_err(|e| Error::Encode(format!("FLAC: {e:?}")))?;
+    stream.stream_info_mut().set_block_sizes(config.block_size, config.block_size).map_err(|e| Error::Encode(format!("FLAC: {e:?}")))?;
     let mut sink = flacenc::bitsink::ByteSink::new();
     stream.write(&mut sink).map_err(|e| Error::Encode(format!("FLAC: {e:?}")))?;
     Ok(sink.as_slice().to_vec())
@@ -98,4 +93,3 @@ mod tests {
         assert_eq!(bytes, [0xff, 0x7f, 0x01, 0x80, 0, 0]);
     }
 }
-

@@ -127,7 +127,12 @@ mod tests {
     fn concurrent_first_requests_load_once() {
         let (loads, slot) = counting(false);
         let slot = Arc::new(slot);
-        let threads: Vec<_> = (0..8).map(|_| { let s = Arc::clone(&slot); std::thread::spawn(move || *s.get().unwrap()) }).collect();
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let s = Arc::clone(&slot);
+                std::thread::spawn(move || *s.get().unwrap())
+            })
+            .collect();
         assert!(threads.into_iter().all(|t| t.join().unwrap() == 7));
         assert_eq!(loads.load(Ordering::SeqCst), 1);
     }

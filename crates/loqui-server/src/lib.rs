@@ -85,7 +85,8 @@ impl Server {
         let tls = tls_from(&config)?;
 
         let env_token = std::env::var("LOQUI_TOKEN").ok().filter(|t| !t.is_empty()).map(zeroize::Zeroizing::new);
-        let generated = fs::default_token_path().ok_or_else(|| Error::Config("cannot find a config directory for the token; set HOME or pass --token-file".into()))?;
+        let generated = fs::default_token_path()
+            .ok_or_else(|| Error::Config("cannot find a config directory for the token; set HOME or pass --token-file".into()))?;
         let tokens = auth::Tokens::resolve(config.token_file.as_deref(), env_token, &generated)?;
         let token_source = tokens.source().clone();
 
@@ -104,14 +105,7 @@ impl Server {
         });
         let router = api::router(state).layer(axum::middleware::from_fn_with_state(policy, policy::enforce));
         let bound = serve::bind(&config.listen, &config.allowed_uids).await?;
-        Ok(Self {
-            bound,
-            router,
-            tls,
-            max_connections: config.max_connections.unwrap_or(64),
-            token_source,
-            listen: config.listen,
-        })
+        Ok(Self { bound, router, tls, max_connections: config.max_connections.unwrap_or(64), token_source, listen: config.listen })
     }
 
     /// Where the server is listening, e.g. `unix:/run/user/1000/loqui/loqui.sock`.

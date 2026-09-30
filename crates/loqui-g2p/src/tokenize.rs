@@ -86,10 +86,7 @@ impl Tokenizer {
             tokenizer.tokenize_span(text, &mut pieces, false);
             let pieces: Vec<String> = pieces.into_iter().map(|t| t.text).collect();
             if let Some(first) = pieces.first() {
-                split_specials
-                    .entry(first.clone())
-                    .or_default()
-                    .push(SplitSpecial { pieces, replacement: replacement.clone() });
+                split_specials.entry(first.clone()).or_default().push(SplitSpecial { pieces, replacement: replacement.clone() });
             }
         }
         tokenizer.split_specials = split_specials;

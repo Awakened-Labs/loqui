@@ -100,12 +100,7 @@ impl Tagger {
 /// The normalised sentence, padded with start and end markers, that the
 /// features look into.
 pub fn context(words: &[&str]) -> Vec<String> {
-    START
-        .iter()
-        .map(|s| (*s).to_owned())
-        .chain(words.iter().map(|w| normalise(w)))
-        .chain(END.iter().map(|s| (*s).to_owned()))
-        .collect()
+    START.iter().map(|s| (*s).to_owned()).chain(words.iter().map(|w| normalise(w))).chain(END.iter().map(|s| (*s).to_owned())).collect()
 }
 
 /// Folds words that behave alike onto one feature value.

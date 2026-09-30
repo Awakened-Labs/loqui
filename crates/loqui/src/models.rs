@@ -33,8 +33,7 @@ pub(crate) struct Pinned {
 pub(crate) const KOKORO_REPO: Pinned =
     Pinned { repo: "onnx-community/Kokoro-82M-v1.0-ONNX", revision: "1939ad2a8e416c0acfeecc08a694d14ef25f2231" };
 #[cfg(feature = "whisper")]
-pub(crate) const WHISPER_REPO: Pinned =
-    Pinned { repo: "ggerganov/whisper.cpp", revision: "5359861c739e955e79d9a303bcbc70fb988958b1" };
+pub(crate) const WHISPER_REPO: Pinned = Pinned { repo: "ggerganov/whisper.cpp", revision: "5359861c739e955e79d9a303bcbc70fb988958b1" };
 
 /// Kokoro model files by precision. fp32 is the reference; the smaller
 /// ones trade a little quality for memory and speed.

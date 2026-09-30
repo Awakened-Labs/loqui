@@ -110,8 +110,7 @@ impl Whisper {
             }
         }
         let path_str = path.to_str().ok_or_else(|| Error::Load(format!("{} is not UTF-8", path.display())))?;
-        let context = WhisperContext::new_with_params(path_str, params)
-            .map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
+        let context = WhisperContext::new_with_params(path_str, params).map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
         let state = context.create_state().map_err(|e| Error::Load(e.to_string()))?;
         let multilingual = context.is_multilingual();
         Ok(Self { state: Mutex::new(state), _context: context, multilingual })
@@ -167,11 +166,6 @@ impl Whisper {
             None if !self.multilingual => Some("en".to_owned()),
             None => detected,
         };
-        Ok(Transcription {
-            text: text.trim().to_owned(),
-            language,
-            duration: samples.len() as f64 / SAMPLE_RATE,
-            segments,
-        })
+        Ok(Transcription { text: text.trim().to_owned(), language, duration: samples.len() as f64 / SAMPLE_RATE, segments })
     }
 }

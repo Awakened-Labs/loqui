@@ -161,11 +161,7 @@ fn gpu_ordinal(gpu: &Option<String>) -> Result<Option<i32>, String> {
     match gpu.as_deref() {
         None => Ok(None),
         Some("cuda") => Ok(Some(0)),
-        Some(s) => s
-            .strip_prefix("cuda:")
-            .and_then(|n| n.parse().ok())
-            .map(Some)
-            .ok_or_else(|| format!("--gpu {s:?}: use cuda or cuda:N")),
+        Some(s) => s.strip_prefix("cuda:").and_then(|n| n.parse().ok()).map(Some).ok_or_else(|| format!("--gpu {s:?}: use cuda or cuda:N")),
     }
 }
 
@@ -279,7 +275,13 @@ fn doctor(args: &ServeArgs) -> Result<(), String> {
                 None => say(false, "XDG_RUNTIME_DIR is unset: pass --listen unix:/path".into()),
             },
         }
-        say(true, format!("token on the socket: {}", if config.require_token_on_unix { "required" } else { "not required (peer uid is checked)" }));
+        say(
+            true,
+            format!(
+                "token on the socket: {}",
+                if config.require_token_on_unix { "required" } else { "not required (peer uid is checked)" }
+            ),
+        );
     }
     if std::env::var_os("LOQUI_TOKEN").is_some() {
         say(false, "LOQUI_TOKEN is set; other processes of this user can read it from /proc. Prefer --token-file".into());
