@@ -95,9 +95,6 @@ struct ServeArgs {
     /// Require a token on the Unix socket too.
     #[arg(long)]
     require_token: bool,
-    /// Also allow these uids on the Unix socket.
-    #[arg(long = "allow-uid")]
-    allow_uids: Vec<u32>,
     /// Also accept these Host names (e.g. a DNS name for a LAN address).
     #[arg(long = "allowed-host")]
     allowed_hosts: Vec<String>,
@@ -201,7 +198,6 @@ fn server_config(args: &ServeArgs) -> Result<ServerConfig, String> {
         },
         token_file: args.token_file.clone(),
         require_token_on_unix: args.require_token,
-        allowed_uids: args.allow_uids.clone(),
         allowed_hosts: args.allowed_hosts.clone(),
         public_health: args.public_health,
         tls_cert: args.tls_cert.clone(),
@@ -259,8 +255,7 @@ fn doctor(args: &ServeArgs) -> Result<(), String> {
         Err(e) => say(false, format!("serve would refuse to start: {e}")),
     }
     let reach = match &config.listen {
-        Listen::Unix(_) if config.allowed_uids.is_empty() => "processes running as this user, on this host".to_owned(),
-        Listen::Unix(_) => format!("this user and uids {:?}, on this host", config.allowed_uids),
+        Listen::Unix(_) => "processes running as this user, on this host".to_owned(),
         Listen::Loopback(p) => format!("any process of any user on this host, via 127.0.0.1:{p}, with a token"),
         Listen::Interface(a) => format!("anything that can route to {a}, with a token"),
         Listen::AllInterfaces(p) => format!("anything that can reach any address of this host on port {p}, with a token"),

@@ -51,8 +51,6 @@ pub struct ServerConfig {
     pub token_file: Option<PathBuf>,
     /// Require a token on the Unix socket as well.
     pub require_token_on_unix: bool,
-    /// Uids allowed on the Unix socket; empty means only this user.
-    pub allowed_uids: Vec<u32>,
     /// Extra `Host` names TCP clients may use.
     pub allowed_hosts: Vec<String>,
     pub public_health: bool,
@@ -104,7 +102,7 @@ impl Server {
             public_health: config.public_health,
         });
         let router = api::router(state).layer(axum::middleware::from_fn_with_state(policy, policy::enforce));
-        let bound = serve::bind(&config.listen, &config.allowed_uids).await?;
+        let bound = serve::bind(&config.listen).await?;
         Ok(Self { bound, router, tls, max_connections: config.max_connections.unwrap_or(64), token_source, listen: config.listen })
     }
 

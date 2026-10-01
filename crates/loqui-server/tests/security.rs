@@ -231,23 +231,6 @@ async fn unix_socket_can_require_a_token() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn unix_socket_refuses_other_uids() {
-    let dir = TempDir::new("uid");
-    let socket = dir.0.join("run").join("loqui.sock");
-    // Allow only a uid that is not ours: our own connection must be dropped.
-    let config = ServerConfig {
-        listen: Listen::Unix(Some(socket)),
-        token_file: Some(token_file(&dir.0)),
-        allowed_uids: vec![loqui_server::fs::current_uid().wrapping_add(4242)],
-        ..ServerConfig::default()
-    };
-    let (addr, _stop) = start(config, &dir.0).await;
-    let (status, text) = send(&addr, &get("/v1/models", "localhost", &[])).await;
-    assert_eq!(status, 0, "the connection is closed without a response: {text:?}");
-}
-
-#[cfg(unix)]
-#[tokio::test]
 async fn a_file_at_the_socket_path_is_never_replaced() {
     let dir = TempDir::new("squat");
     let socket = dir.0.join("run").join("loqui.sock");

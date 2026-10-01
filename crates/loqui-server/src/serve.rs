@@ -30,7 +30,12 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) enum Bound {
-    Unix { listener: UnixListener, path: PathBuf, allowed_uids: Vec<u32> },
+    /// `owner` is the only uid served: the one loqui runs as.
+    Unix {
+        listener: UnixListener,
+        path: PathBuf,
+        owner: u32,
+    },
     Tcp(TcpListener),
 }
 
@@ -44,7 +49,7 @@ impl Bound {
 }
 
 /// Binds the listener `listen` asks for.
-pub(crate) async fn bind(listen: &Listen, allowed_uids: &[u32]) -> Result<Bound, Error> {
+pub(crate) async fn bind(listen: &Listen) -> Result<Bound, Error> {
     match listen {
         Listen::Unix(path) => {
             let path = match path {
@@ -53,12 +58,7 @@ pub(crate) async fn bind(listen: &Listen, allowed_uids: &[u32]) -> Result<Bound,
                     .ok_or_else(|| Error::Config("XDG_RUNTIME_DIR is not set; pass --listen unix:/path/to/loqui.sock".into()))?,
             };
             let listener = bind_unix(&path)?;
-            let mut uids = allowed_uids.to_vec();
-            #[cfg(unix)]
-            if uids.is_empty() {
-                uids.push(crate::fs::current_uid());
-            }
-            Ok(Bound::Unix { listener, path, allowed_uids: uids })
+            Ok(Bound::Unix { listener, path, owner: crate::fs::current_uid() })
         }
         tcp => {
             let addr = tcp.socket_addr().expect("TCP modes have an address");
@@ -173,14 +173,14 @@ enum Io {
 }
 
 /// Accepts one connection. `Ok(None)` means one was refused (a Unix peer
-/// whose uid is not allowed) and the loop should carry on.
+/// running as another user) and the loop should carry on.
 async fn accept(bound: &Bound) -> std::io::Result<Option<(Io, Transport)>> {
     match bound {
-        Bound::Unix { listener, allowed_uids, .. } => {
+        Bound::Unix { listener, owner, .. } => {
             let (stream, _) = listener.accept().await?;
             let uid = stream.peer_cred()?.uid();
-            if !allowed_uids.contains(&uid) {
-                tracing::warn!(uid, "refused a Unix socket connection from a uid that is not allowed");
+            if uid != *owner {
+                tracing::warn!(uid, "refused a Unix socket connection from another user");
                 return Ok(None);
             }
             Ok(Some((Io::Unix(stream), Transport::Unix { uid })))
@@ -231,6 +231,25 @@ pub(crate) fn tls_acceptor(cert: &Path, key: &Path) -> Result<tokio_rustls::TlsA
         .with_single_cert(chain, key)
         .map_err(|e| Error::Config(format!("TLS: {e}")))?;
     Ok(tokio_rustls::TlsAcceptor::from(Arc::new(config)))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// Another user cannot normally reach the 0600 socket at all; if one
+    /// does (root, or a loosened mode), the peer-uid check still drops it.
+    #[tokio::test]
+    async fn a_peer_running_as_another_user_is_dropped() {
+        let dir = std::env::temp_dir().join(format!("loqui-peer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("loqui.sock");
+        let Bound::Unix { listener, path, .. } = bind(&Listen::Unix(Some(path))).await.unwrap() else { unreachable!() };
+        let stranger = Bound::Unix { listener, path: path.clone(), owner: crate::fs::current_uid().wrapping_add(4242) };
+        let _client = tokio::net::UnixStream::connect(&path).await.unwrap();
+        assert!(accept(&stranger).await.unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(all(test, feature = "tls", unix))]
