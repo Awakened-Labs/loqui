@@ -11,15 +11,19 @@ contract and drops everything else.
 
 ## Status
 
-Working end to end: existing OpenAI-compatible speech clients run against
-`loqui serve` with no code changes. Parity with the open-speech
-container it replaces is measured in `tools/parity/README.md` (G2P 0.01-0.78%
-phoneme error; end-to-end WER 2.42% vs the container's 2.28%). Status and
-next steps: `docs/STATUS.md`.
+0.1: working end to end. Existing OpenAI-compatible speech clients run
+against `loqui serve` with no code changes. Parity with the open-speech
+container it replaces is measured in `tools/parity/README.md`:
+- G2P: 0.01-0.78% phoneme error;
+- end-to-end WER: 2.42%, against the container's 2.28%;
+- transcription WER: 2.19%, against faster-whisper's 2.28%.
+
+What is verified and what is still open is in `docs/STATUS.md`; changes are
+in `CHANGELOG.md`.
 
 ## Quick start
 
-    cargo install --path crates/loqui-cli      # needs cmake + a C++ compiler for Whisper
+    cargo install loqui-cli                    # needs cmake + a C++ compiler for Whisper
     loqui serve                                # Unix socket, this user only
     loqui serve --listen loopback:8100         # 127.0.0.1, bearer token required
     loqui token show                           # the generated token
@@ -28,7 +32,8 @@ next steps: `docs/STATUS.md`.
     loqui speak "Hello." -o hello.wav          # in process, no server
     loqui transcribe hello.wav
 
-As a library, with no listener at all:
+As a library, with no listener at all (`cargo add loqui`, plus
+`--features whisper` for speech-to-text):
 
 ```rust
 let engine = loqui::Engine::builder().build()?;
@@ -71,7 +76,16 @@ such as `af_bella(2)+af_sky(1)`.
 | `loqui-g2p` | GPL-free English G2P (a Rust port of misaki) |
 | `loqui-kokoro` | Kokoro-82M on ONNX Runtime |
 | `loqui-whisper` | Whisper on whisper.cpp |
-| `loqui-audio` | WAV/FLAC/PCM encoding; decoding and resampling for Whisper |
+| `loqui-audio` | WAV, FLAC, Ogg Opus and PCM out (MP3 behind a feature); decoding and resampling for Whisper |
+
+## Security
+
+loqui is safe to embed by default, and every widening of its exposure is a
+named, deliberate choice:
+- [SECURITY.md](SECURITY.md) describes the exposure model and how to report
+  a vulnerability privately.
+- [docs/embedding.md](docs/embedding.md) covers running loqui inside your
+  own program: limits, tokens, and the licensing each feature brings.
 
 ## License
 
