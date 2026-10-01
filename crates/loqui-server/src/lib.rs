@@ -13,6 +13,9 @@
 //!   requests must name an expected `Host`, and there is no CORS.
 //! - Bodies, text length, audio length, queue depth, header arrival and
 //!   request time are all bounded.
+//!
+//! [SECURITY.md](https://github.com/Awakened-Labs/loqui/blob/main/SECURITY.md) describes the exposure model in full, and
+//! [Embedding loqui safely](https://github.com/Awakened-Labs/loqui/blob/main/docs/embedding.md) covers choosing a listener and tokens.
 
 pub mod api;
 pub mod auth;

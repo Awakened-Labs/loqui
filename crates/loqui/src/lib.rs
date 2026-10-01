@@ -19,6 +19,11 @@
 //! Models load on first use and, if given an idle timeout, unload when
 //! unused. Everything is synchronous; call it from `spawn_blocking` in async
 //! code.
+//!
+//! Before shipping an embedded engine, read
+//! [Embedding loqui safely](https://github.com/Awakened-Labs/loqui/blob/main/docs/embedding.md): downloads, cache permissions, limits on
+//! untrusted input, and the licensing each feature brings (leave `mp3` off in
+//! proprietary programs).
 
 mod models;
 mod slot;
