@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-whisper"
+keywords = ["whisper", "speech-to-text", "stt", "transcription", "asr"]
+categories = ["multimedia::audio", "accessibility"]
 description = "Whisper speech-to-text for loqui, on whisper.cpp."
 
 [lints]

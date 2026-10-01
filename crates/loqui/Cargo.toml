@@ -5,8 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui"
+keywords = ["tts", "speech-to-text", "text-to-speech", "whisper", "kokoro"]
+categories = ["multimedia::audio", "accessibility"]
 description = "Local speech for Rust: Kokoro text-to-speech and Whisper speech-to-text, in process, with no network listener."
 readme = "../../README.md"
+
+# docs.rs has no network: ort, whisper-rs-sys and mp3lame-sys skip their
+# native builds there, so the optional APIs can be documented.
+[package.metadata.docs.rs]
+features = ["whisper", "mp3"]
 
 [lints]
 workspace = true

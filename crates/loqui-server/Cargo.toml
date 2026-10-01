@@ -5,7 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-server"
+keywords = ["openai", "tts", "stt", "speech", "server"]
+categories = ["web-programming::http-server", "multimedia::audio"]
 description = "A safe-by-default OpenAI-compatible speech server for loqui: Unix socket first, tokens always, no browsers."
+
+# docs.rs has no network: ort, whisper-rs-sys and mp3lame-sys skip their
+# native builds there, so the optional APIs can be documented.
+[package.metadata.docs.rs]
+features = ["whisper", "mp3", "tls"]
 
 [lints]
 workspace = true

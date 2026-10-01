@@ -5,9 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-g2p"
+keywords = ["g2p", "phonemes", "phonemizer", "kokoro", "misaki"]
+categories = ["text-processing", "multimedia::audio"]
 description = "GPL-free English grapheme-to-phoneme for Kokoro: misaki lexicons plus an embedded neural fallback."
 # The embedded G2P weights are data, not code; keep them in the package.
-include = ["src/**", "data/**", "Cargo.toml", "README.md"]
+include = ["src/**", "data/**", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
 
 [lints]
 workspace = true

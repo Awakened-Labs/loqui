@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-kokoro"
+keywords = ["tts", "text-to-speech", "kokoro", "onnx", "speech"]
+categories = ["multimedia::audio", "accessibility"]
 description = "Kokoro-82M text-to-speech on ONNX Runtime, fed by loqui-g2p. GPL-free."
 
 [lints]

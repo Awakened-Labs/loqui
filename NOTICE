@@ -55,8 +55,28 @@ Linked libraries with attribution requirements (compiled into binaries):
   Copyright (c) 2023-2026 The ggml authors. MIT License. Built from source
   by the `whisper-rs` crate (loqui-whisper, optional).
 
-Optional, off-by-default GPL component:
+  opus-rs — https://github.com/restsend/opus-rs
+  Copyright 2026 restsend.com; Copyright 2001-2023 Xiph.Org, Skype Limited,
+  Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell,
+  Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon. BSD-3-Clause.
+  A Rust port of libopus, used to decode and encode Opus (loqui-audio).
 
-  The `espeak` feature of loqui-g2p, and the runtime espeak-ng subprocess
-  fallback, use eSpeak NG (GPL-3.0-or-later). A default build links no GPL
-  code. A binary built with the `espeak` feature is subject to the GPL.
+Linked libraries under weak copyleft:
+
+  symphonia — https://github.com/pdeljanov/Symphonia
+  Mozilla Public License 2.0 (file-level copyleft). Used unmodified to demux
+  and decode uploaded audio (loqui-audio). Its source is available from the
+  link above and from crates.io.
+
+Optional, off-by-default LGPL component:
+
+  LAME 3.100 — https://lame.sourceforge.io
+  LGPL-2.0-or-later, through the mp3lame-encoder and mp3lame-sys crates
+  (LGPL-3.0). Compiled from source and linked statically only when the `mp3`
+  feature is enabled. A default build contains no LAME code. A binary built
+  with `mp3` must let its users relink it against a modified LAME; running
+  `loqui serve` as a separate process keeps that obligation away from its
+  clients.
+
+No GPL code is linked. Where upstream misaki calls eSpeak NG (GPL-3.0) for
+unknown words, loqui-g2p uses its own embedded neural model instead.

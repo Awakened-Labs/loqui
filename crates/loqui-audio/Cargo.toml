@@ -5,7 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-audio"
+keywords = ["audio", "opus", "flac", "wav", "resample"]
+categories = ["multimedia::audio", "multimedia::encoding"]
 description = "Audio for loqui: WAV, FLAC, Ogg Opus and raw PCM out (MP3 behind a feature); common containers in, resampled for Whisper. Pure Rust."
+
+# docs.rs has no network: ort, whisper-rs-sys and mp3lame-sys skip their
+# native builds there, so the optional APIs can be documented.
+[package.metadata.docs.rs]
+features = ["mp3"]
 
 [lints]
 workspace = true
