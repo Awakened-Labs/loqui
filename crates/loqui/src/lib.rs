@@ -37,7 +37,9 @@ use slot::Slot;
 /// The id `/v1/models` lists for the Kokoro model.
 pub const TTS_MODEL_ID: &str = "kokoro";
 
+/// Non-exhaustive because `Stt` exists only with the `whisper` feature.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// The request itself is invalid (empty text, unknown voice, bad speed).
     #[error("{0}")]

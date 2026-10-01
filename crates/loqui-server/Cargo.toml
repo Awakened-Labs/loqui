@@ -60,4 +60,4 @@ cuda = ["loqui/cuda"]
 tls = ["dep:tokio-rustls"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util", "signal"] }

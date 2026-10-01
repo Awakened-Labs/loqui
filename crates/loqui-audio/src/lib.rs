@@ -36,7 +36,11 @@ impl Pcm {
 }
 
 /// An output format, named as the OpenAI API names it in `response_format`.
+///
+/// Non-exhaustive because `Mp3` exists only with the `mp3` feature, and any
+/// crate in a build can turn that on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Format {
     Wav,
     Flac,
