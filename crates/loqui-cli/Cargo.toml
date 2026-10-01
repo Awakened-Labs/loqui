@@ -1,0 +1,39 @@
+[package]
+name = "loqui-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-cli"
+keywords = ["tts", "stt", "speech", "whisper", "kokoro"]
+categories = ["command-line-utilities", "multimedia::audio"]
+description = "The loqui command: serve, speak, transcribe, manage tokens, check exposure."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "loqui"
+path = "src/main.rs"
+
+[dependencies]
+loqui = { path = "../loqui", version = "0.1.0" }
+loqui-server = { path = "../loqui-server", version = "0.1.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+# The command is the end product, so it builds with speech-to-text and TLS
+# unless told otherwise (`--no-default-features` for a TTS-only build with
+# no C++ toolchain).
+default = ["whisper", "tls"]
+whisper = ["loqui/whisper", "loqui-server/whisper"]
+# MP3 output through LAME (LGPL). Off by default; see loqui-audio.
+mp3 = ["loqui/mp3", "loqui-server/mp3"]
+tls = ["loqui-server/tls"]
+cuda = ["loqui/cuda", "loqui-server/cuda"]

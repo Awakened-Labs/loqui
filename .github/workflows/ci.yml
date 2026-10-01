@@ -1,0 +1,58 @@
+name: CI
+
+# Every push is checked, so each slice on an arc branch gets a verdict before
+# its pull request exists. A pull request from this repository shows those
+# same checks; only one from a fork needs a run of its own.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Each job runs one gate of scripts/gates.sh, the same script a developer
+# runs before pushing.
+jobs:
+  gate:
+    name: ${{ matrix.gate }}
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [fmt, clippy, test, tts-only, mp3, package]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.gate != 'fmt'
+        with:
+          key: ${{ matrix.gate }}
+      - run: ./scripts/gates.sh ${{ matrix.gate }}
+
+  deny:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # The oldest compiler the workspace promises to build with
+  # (`rust-version` in Cargo.toml).
+  msrv:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked

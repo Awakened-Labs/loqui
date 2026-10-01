@@ -1,0 +1,47 @@
+[package]
+name = "loqui-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-audio"
+keywords = ["audio", "opus", "flac", "wav", "resample"]
+categories = ["multimedia::audio", "multimedia::encoding"]
+description = "Audio for loqui: WAV, FLAC, Ogg Opus and raw PCM out (MP3 behind a feature); common containers in, resampled for Whisper. Pure Rust."
+
+# docs.rs has no network: ort, whisper-rs-sys and mp3lame-sys skip their
+# native builds there, so the optional APIs can be documented.
+[package.metadata.docs.rs]
+features = ["mp3"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# FLAC encoding, pure Rust (Apache-2.0). Default features off: `par` spawns
+# encoder threads (pointless for seconds-long speech, and threads a library
+# should not start on its own), `serde` and `log` are unused.
+flacenc = { version = "0.5", default-features = false }
+
+# Demuxing and decoding uploads. MPL-2.0 (file-level copyleft; linking is
+# unaffected). Defaults (WAV, FLAC, Ogg/Vorbis, MKV, PCM, ADPCM)
+# plus MP3 and MP4/AAC, the formats browsers and phones record.
+symphonia = { version = "0.6", features = ["mp3", "isomp4", "aac"] }
+
+# Resampling to Whisper's 16 kHz. Pinned to one major: its API moves.
+rubato = "=4"
+
+thiserror = "2"
+opus-rs = "0.1.34"
+
+# MP3 encoding: LAME 3.100 (LGPL), compiled from bundled source with a C
+# compiler and make, linked statically. Only with the `mp3` feature.
+mp3lame-encoder = { version = "0.2.5", optional = true }
+
+[features]
+default = []
+# MP3 output through LAME. Off by default: it is the one LGPL component, and
+# a program that links loqui in process takes on LAME's relinking terms.
+mp3 = ["dep:mp3lame-encoder"]

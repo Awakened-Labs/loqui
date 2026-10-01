@@ -1,0 +1,34 @@
+[package]
+name = "loqui-whisper"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-whisper"
+keywords = ["whisper", "speech-to-text", "stt", "transcription", "asr"]
+categories = ["multimedia::audio", "accessibility"]
+description = "Whisper speech-to-text for loqui, on whisper.cpp."
+
+[lints]
+workspace = true
+
+[dependencies]
+# whisper.cpp bindings (Unlicense; whisper.cpp is MIT). Building them needs
+# cmake and a C++ compiler, which is why the facade makes this crate an
+# opt-in feature. `tracing_backend` routes whisper.cpp's own logging into
+# `tracing` instead of stderr.
+whisper-rs = { version = "0.16", default-features = false, features = ["tracing_backend"] }
+
+thiserror = "2"
+
+[features]
+# Run on an NVIDIA GPU. Needs the CUDA toolkit (nvcc) at build time.
+cuda = ["whisper-rs/cuda"]
+# Run on any Vulkan GPU. Needs the Vulkan SDK (glslc) at build time.
+vulkan = ["whisper-rs/vulkan"]
+
+[dev-dependencies]
+# The examples decode uploads the way the server will.
+loqui-audio = { path = "../loqui-audio" }

@@ -1,0 +1,44 @@
+[package]
+name = "loqui-g2p"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-g2p"
+keywords = ["g2p", "phonemes", "phonemizer", "kokoro", "misaki"]
+categories = ["text-processing", "multimedia::audio"]
+description = "GPL-free English grapheme-to-phoneme for Kokoro: misaki lexicons plus an embedded neural fallback."
+# The embedded G2P weights are data, not code; keep them in the package.
+include = ["src/**", "data/**", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# Parses the safetensors header of the embedded G2P model, the lexicons and
+# the tokenizer rules.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# spaCy's tokenizer patterns and misaki's subtokenizer use lookaround
+# (`(?<=[0-9])`, `(?=\p{Lu}\p{Ll})`) and one backreference, which `regex`
+# deliberately does not support. fancy-regex adds them by backtracking only
+# where a pattern needs it and hands every other part to `regex`. MIT.
+fancy-regex = "0.14"
+
+# misaki normalises each word with NFKC before lookup ("ﬁ" to "fi", "²" to
+# "2"). MIT/Apache.
+unicode-normalization = "0.1"
+
+# `erf` for the exact GELU the BART checkpoint was trained with. `std` has no
+# `erf`, and the tanh approximation drifts enough to flip argmax on a few
+# words. Pure Rust, MIT/Apache.
+libm = "0.2"
+
+thiserror = "2"
+
+[dev-dependencies]
+# Pins the embedded checkpoints and lexicons to the exact upstream bytes.
+sha2 = "0.10"

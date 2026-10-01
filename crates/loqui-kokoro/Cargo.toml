@@ -1,0 +1,46 @@
+[package]
+name = "loqui-kokoro"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-kokoro"
+keywords = ["tts", "text-to-speech", "kokoro", "onnx", "speech"]
+categories = ["multimedia::audio", "accessibility"]
+description = "Kokoro-82M text-to-speech on ONNX Runtime, fed by loqui-g2p. GPL-free."
+
+[lints]
+workspace = true
+
+[dependencies]
+loqui-g2p = { path = "../loqui-g2p", version = "0.1.0" }
+
+# ONNX Runtime bindings. Pinned exactly: 2.0 is still in release candidates
+# and the API moves between them. Default features are off to keep two of
+# them out: `tls-native` would link OpenSSL for the binary download, and
+# `ndarray` is unused (tensors go in and out as plain slices).
+# `download-binaries` fetches a prebuilt static ONNX Runtime (MIT) at build
+# time, so no C++ toolchain is needed; `load-dynamic` below swaps that for a
+# system libonnxruntime.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+    "std",
+    "download-binaries",
+    "tls-rustls",
+    "api-22",
+] }
+
+# The embedded phoneme vocabulary.
+serde_json = "1"
+
+thiserror = "2"
+
+[features]
+# Run Kokoro on an NVIDIA GPU through ONNX Runtime's CUDA provider. The
+# provider is a pair of shared libraries ONNX Runtime loads from beside the
+# executable; `copy-dylibs` links them into the target directory.
+cuda = ["ort/cuda", "ort/copy-dylibs"]
+# Link against a system ONNX Runtime at run time instead of the downloaded
+# static build (for distributions that package onnxruntime).
+load-dynamic = ["ort/load-dynamic"]

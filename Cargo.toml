@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/loqui",
+    "crates/loqui-audio",
+    "crates/loqui-cli",
+    "crates/loqui-g2p",
+    "crates/loqui-kokoro",
+    "crates/loqui-server",
+    "crates/loqui-whisper",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/Awakened-Labs/loqui"
+homepage = "https://github.com/Awakened-Labs/loqui"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# The G2P forward pass is ~200k multiply-adds per decoded phoneme, and the
+# lexicons are tens of megabytes of JSON. Unoptimised, `cargo test` spends
+# seconds in each; this keeps the crate fast while the rest of the tree
+# stays quick to rebuild.
+[profile.dev.package.loqui-g2p]
+opt-level = 3

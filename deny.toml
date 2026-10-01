@@ -1,0 +1,69 @@
+# cargo deny check
+#
+# What may enter loqui's dependency tree. loqui is MIT and is meant to be
+# embedded, so everything it links must be permissive, with one reviewed
+# exception (MPL-2.0, below).
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+ignore = [
+    # number_prefix is unmaintained. It formats byte counts for the download
+    # progress bar of hf-hub 0.4 (through indicatif 0.17) and handles no
+    # untrusted input. Goes away with hf-hub 1.x.
+    "RUSTSEC-2025-0119",
+]
+
+[licenses]
+# Exhaustive: a licence not listed here fails the check, and one listed but
+# no longer used is reported, so this list stays the true set.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    # whisper-rs and its sys crate: public-domain dedication.
+    "Unlicense",
+    # webpki-roots: Mozilla's CA bundle, a permissive data licence.
+    "CDLA-Permissive-2.0",
+    # The one copyleft licence, for symphonia (audio decoding) and
+    # option-ext. MPL-2.0 is per file: it obliges publishing changes to those
+    # crates' own sources, which loqui does not modify, and puts nothing on
+    # code that links them.
+    "MPL-2.0",
+]
+unused-allowed-license = "deny"
+
+# LAME and its Rust bindings, reached only through the off-by-default `mp3`
+# feature. loqui itself stays MIT, but a binary built with `mp3` must let its
+# user relink LAME: an open-source build satisfies that, and an in-process
+# proprietary embedder would have to arrange it. Scoped to these two crates
+# so no other LGPL dependency slips in unreviewed.
+#
+# Both declare "LGPL-3.0", a deprecated SPDX id (hence cargo deny's
+# parse-error warning). The bindings are LGPL-3.0-only; mp3lame-sys also
+# bundles LAME 3.100's C source, which is LGPL-2.0-or-later.
+[[licenses.exceptions]]
+crate = "mp3lame-encoder"
+allow = ["LGPL-3.0"]
+
+[[licenses.exceptions]]
+crate = "mp3lame-sys"
+allow = ["LGPL-3.0"]
+
+[bans]
+# Duplicates here are all transitive (windows-sys, getrandom, ...): nothing
+# loqui can act on, so reporting them would only bury real findings.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

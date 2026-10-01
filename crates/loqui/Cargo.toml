@@ -1,0 +1,48 @@
+[package]
+name = "loqui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui"
+keywords = ["tts", "speech-to-text", "text-to-speech", "whisper", "kokoro"]
+categories = ["multimedia::audio", "accessibility"]
+description = "Local speech for Rust: Kokoro text-to-speech and Whisper speech-to-text, in process, with no network listener."
+readme = "../../README.md"
+
+# docs.rs has no network: ort, whisper-rs-sys and mp3lame-sys skip their
+# native builds there, so the optional APIs can be documented.
+[package.metadata.docs.rs]
+features = ["whisper", "mp3"]
+
+[lints]
+workspace = true
+
+[dependencies]
+loqui-audio = { path = "../loqui-audio", version = "0.1.0" }
+loqui-g2p = { path = "../loqui-g2p", version = "0.1.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+# Speech-to-text needs a C++ toolchain and cmake (whisper.cpp), so it is a
+# feature; a text-to-speech-only build needs neither.
+loqui-whisper = { path = "../loqui-whisper", version = "0.1.0", optional = true }
+
+# Model downloads, pinned to commit revisions. The sync API over ureq, with
+# rustls rather than OpenSSL, and no tokio: the engine is synchronous.
+hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
+
+# Verifies downloaded weights against pinned digests.
+sha2 = "0.10"
+
+thiserror = "2"
+tracing = "0.1"
+
+[features]
+default = []
+whisper = ["dep:loqui-whisper"]
+# MP3 speech output through LAME (LGPL); see loqui-audio's `mp3` feature.
+mp3 = ["loqui-audio/mp3"]
+# GPU inference: Kokoro through ONNX Runtime's CUDA provider, Whisper through
+# whisper.cpp's CUDA backend (needs the CUDA toolkit at build time).
+cuda = ["loqui-kokoro/cuda", "loqui-whisper?/cuda"]
