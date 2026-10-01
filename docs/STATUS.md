@@ -13,7 +13,7 @@
 | M5 server + CLI | done | 13 security integration tests; live-tested with an existing OpenAI-compatible client, unchanged |
 | M6 parity + cut-over | done | STT WER 2.19% vs faster-whisper 2.28% on the same 250 clips; the `cuda` image serves both models on the GPU (speech at real-time factor 0.09, transcription 0.16) in 2.7 GB of GPU memory |
 | M7 client integration | done over HTTP | an existing OpenAI-compatible speech client, unchanged, speaks and transcribes through `loqui serve` |
-| M8 publish | in progress | crates.io, public repository, SECURITY.md, embedding guide |
+| M8 publish | done | 0.1.0 on crates.io; public repository; SECURITY.md (private reporting); docs/embedding.md |
 
 Run `./scripts/gates.sh` before pushing; CI runs the same script, one gate
 per job. `--all-features` needs the CUDA and Vulkan toolkits; the `cuda`

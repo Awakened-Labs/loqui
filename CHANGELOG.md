@@ -5,7 +5,7 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-01
 
 The first release: local Kokoro text-to-speech and Whisper speech-to-text
 for Rust, as a library or as a server speaking the OpenAI audio API.
