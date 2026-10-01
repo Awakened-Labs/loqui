@@ -4,8 +4,10 @@ Local speech for Rust: Kokoro text-to-speech and Whisper speech-to-text, as
 a library you link in-process or a small server that speaks the OpenAI audio
 API. It is safe to embed by default.
 
-loqui is a Rust rewrite of the parts of
-[open-speech](https://github.com/jeremy-windsor/open-speech): the
+loqui began as the speech backend for ennius, our agent runtime: a Rust
+rewrite of the parts of
+[open-speech](https://github.com/jeremy-windsor/open-speech) by
+[jeremy-windsor](https://github.com/jeremy-windsor) that ennius used, the
 OpenAI-compatible speech and transcription endpoints. It keeps the wire
 contract and drops everything else.
 
