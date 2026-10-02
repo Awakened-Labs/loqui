@@ -4,10 +4,13 @@
 //! - `POST /v1/audio/transcriptions` and `/v1/audio/translations`:
 //!   multipart upload in, JSON or text out.
 //! - `GET /v1/models`, `GET /v1/models/{id}`.
+//! - `GET /v1/audio/voices`: open-speech's read-only voice list, so a
+//!   client can discover the voices an operator has named.
 //! - `GET /health`.
 //!
 //! There is deliberately nothing else: no web UI, no OpenAPI document, no
-//! model management over HTTP (models are chosen when the server starts).
+//! model or voice management over HTTP (both are chosen when the server
+//! starts).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -65,6 +68,7 @@ pub fn router(state: Arc<AppState>) -> Router<()> {
         .route("/health", get(health))
         .route("/v1/models", get(list_models))
         .route("/v1/models/{id}", get(get_model))
+        .route("/v1/audio/voices", get(list_voices))
         .route("/v1/audio/speech", post(speech).layer(DefaultBodyLimit::max(SPEECH_BODY_LIMIT)));
     #[cfg(feature = "whisper")]
     let router = router
@@ -104,6 +108,25 @@ async fn get_model(State(state): State<Arc<AppState>>, Path(id): Path<String>) -
         .find(|m| m["id"] == id)
         .map(Json)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invalid_request_error", "model_not_found", "no such model"))
+}
+
+/// open-speech's shape, `{"voices":[{id, name, language, gender}]}`, plus
+/// `blend` on a named voice. open-speech's `?model=` is accepted and has
+/// nothing to choose between.
+async fn list_voices(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, ApiError> {
+    let voices: Vec<_> = state
+        .engine
+        .voices()?
+        .into_iter()
+        .map(|v| {
+            let mut entry = serde_json::json!({ "id": v.id, "name": v.name, "language": v.language, "gender": v.gender });
+            if let Some(blend) = v.blend {
+                entry["blend"] = blend.into();
+            }
+            entry
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "voices": voices })))
 }
 
 #[derive(Deserialize)]
