@@ -34,6 +34,7 @@ use std::time::Duration;
 
 pub use loqui_audio::Format;
 pub use loqui_g2p::OovFallback;
+pub use loqui_kokoro::Blend;
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, default_cache_dir};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
@@ -320,8 +321,8 @@ fn voice_file(id: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct SpeakRequest {
     pub text: String,
-    /// A voice spec: `af_heart`, an OpenAI alias (`alloy`), or a blend
-    /// (`af_bella(2)+af_sky(1)`).
+    /// A voice spec: `af_heart`, an OpenAI name (`alloy`), or a blend
+    /// (`af_bella(2)+af_sky(1)`; see [`Blend`]).
     pub voice: String,
     /// 0.25 to 4.0.
     pub speed: f32,
@@ -441,6 +442,18 @@ impl Engine {
         loqui_kokoro::ENGLISH_VOICES
     }
 
+    /// Downloads every voice pack on the roster now (about 15 MB), so any
+    /// voice or blend can be spoken on a host that later runs with
+    /// [`Downloads::Deny`].
+    pub fn fetch_voices(&self) -> Result<(), Error> {
+        self.inner.tts.as_ref().ok_or(Error::Disabled("text-to-speech"))?;
+        loqui_kokoro::ENGLISH_VOICES.iter().try_for_each(|id| self.fetch_voice(id))
+    }
+
+    fn fetch_voice(&self, id: &str) -> Result<(), Error> {
+        models::fetch(&self.inner.cache, &models::KOKORO_REPO, &voice_file(id), None, self.inner.downloads).map(drop)
+    }
+
     pub fn speak(&self, request: &SpeakRequest) -> Result<Speech, Error> {
         let slot = self.inner.tts.as_ref().ok_or(Error::Disabled("text-to-speech"))?;
         let chars = request.text.chars().count();
@@ -453,16 +466,19 @@ impl Engine {
         if !(0.25..=4.0).contains(&request.speed) {
             return Err(Error::Invalid(format!("speed {} is outside 0.25 to 4.0", request.speed)));
         }
-        // Only voices on the roster are fetched, so a request cannot make
-        // the engine download arbitrary files.
-        for (id, _) in loqui_kokoro::parse_voice_spec(&request.voice)? {
-            if !loqui_kokoro::ENGLISH_VOICES.contains(&id.as_str()) {
-                return Err(Error::Invalid(format!("unknown voice {id:?}")));
-            }
-            models::fetch(&self.inner.cache, &models::KOKORO_REPO, &voice_file(&id), None, self.inner.downloads)?;
+        // Every part is checked before any is fetched, and only voices on
+        // the roster are fetched, so a request cannot make the engine
+        // download arbitrary files, nor anything at all for a bad voice.
+        let voice = Blend::parse(&request.voice, |_| None)?;
+        if voice.parts().iter().any(|(id, _)| !loqui_kokoro::ENGLISH_VOICES.contains(&id.as_str())) {
+            // The id is not echoed: it is caller input that failed validation.
+            return Err(Error::Invalid("unknown voice".into()));
+        }
+        for (id, _) in voice.audible() {
+            self.fetch_voice(id)?;
         }
         let kokoro = slot.get()?;
-        let samples = kokoro.speak(&request.text, &request.voice, request.speed)?;
+        let samples = kokoro.speak(&request.text, &voice, request.speed)?;
         let pcm = loqui_audio::Pcm { samples, rate: loqui_kokoro::SAMPLE_RATE };
         let duration_secs = pcm.duration_secs();
         let audio = loqui_audio::encode(&pcm, request.format)?;

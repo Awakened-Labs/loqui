@@ -20,8 +20,8 @@ features = ["whisper", "mp3", "tls"]
 workspace = true
 
 [dependencies]
-loqui = { path = "../loqui", version = "0.1.0" }
-loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+loqui = { path = "../loqui", version = "0.2.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.2.0" }
 
 # HTTP. Routing, extractors and multipart from axum; connections are served
 # by hyper directly (see serve.rs) so each one can be checked and timed.

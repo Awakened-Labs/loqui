@@ -5,15 +5,17 @@
 //!           [--phonemes] [--raw OUT.f32] [--threads N]
 //!     speak MODEL.onnx VOICES_DIR OUT_DIR --lines FILE [--voice af_heart]
 //!
-//! `--phonemes` treats the text as a phoneme string and skips G2P; `--raw`
-//! also writes the unprocessed model output as little-endian f32. `--lines`
-//! speaks each line of FILE to OUT_DIR/NNNN.wav with one model load.
+//! `--voice` takes a pack id, an OpenAI name or a blend such as
+//! `af_bella(2)+af_sky(1)`. `--phonemes` treats the text as a phoneme string
+//! and skips G2P; `--raw` also writes the unprocessed model output as
+//! little-endian f32. `--lines` speaks each line of FILE to
+//! OUT_DIR/NNNN.wav with one model load.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use loqui_g2p::OovFallback;
-use loqui_kokoro::{Device, Kokoro, KokoroModel, SAMPLE_RATE, Voice, parse_voice_spec, post};
+use loqui_kokoro::{Blend, Device, Kokoro, KokoroModel, SAMPLE_RATE, Voice, post};
 
 fn wav(samples: &[f32]) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
@@ -59,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let [model_path, voices, out_dir] = positional[..] else {
             return Err("usage: speak MODEL.onnx VOICES_DIR OUT_DIR --lines FILE".into());
         };
-        let voice = flag("--voice").unwrap_or_else(|| "af_heart".into());
+        let voice: Blend = flag("--voice").as_deref().unwrap_or("af_heart").parse()?;
         let model = KokoroModel::load(&PathBuf::from(model_path), Device::Cpu, None)?;
         let kokoro = Kokoro::new(model, PathBuf::from(voices), OovFallback::Neural);
         std::fs::create_dir_all(out_dir)?;
@@ -76,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let [model_path, voices, out, text] = positional[..] else {
         return Err("usage: speak MODEL.onnx VOICES_DIR OUT.wav TEXT [--voice V] [--speed S] [--phonemes] [--raw F]".into());
     };
-    let voice = flag("--voice").unwrap_or_else(|| "af_heart".into());
+    let voice: Blend = flag("--voice").as_deref().unwrap_or("af_heart").parse()?;
     let speed: f32 = flag("--speed").map_or(Ok(1.0), |s| s.parse())?;
     let threads = flag("--threads").map(|t| t.parse()).transpose()?;
 
@@ -86,8 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let started = Instant::now();
     let raw = if args.iter().any(|a| a == "--phonemes") {
-        let (id, _) = &parse_voice_spec(&voice)?[0];
-        let style = Voice::from_file(&PathBuf::from(voices).join(format!("{id}.bin")))?;
+        // Mixed here from the public pieces, as `Kokoro` mixes them.
+        let packs = voice.audible().map(|(id, w)| Ok((Voice::from_file(&PathBuf::from(voices).join(format!("{id}.bin")))?, w)));
+        let packs = packs.collect::<Result<Vec<_>, loqui_kokoro::Error>>()?;
+        let style = Voice::blend(&packs.iter().map(|(v, w)| (v, *w)).collect::<Vec<_>>())?;
         model.synthesize(text, &style, speed)?
     } else {
         let kokoro = Kokoro::new(model, PathBuf::from(voices), OovFallback::Neural);

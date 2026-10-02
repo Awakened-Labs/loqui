@@ -31,7 +31,8 @@ enum Command {
     },
     /// Explain what `serve` would expose with these options, and flag risks.
     Doctor(ServeArgs),
-    /// Download model weights now, for hosts that will run with --offline.
+    /// Download model weights and every voice now, for hosts that will run
+    /// with --offline.
     Fetch(EngineArgs),
 }
 
@@ -347,6 +348,8 @@ fn fetch(args: EngineArgs) -> Result<(), String> {
     for m in engine.models() {
         eprintln!("{} ready", m.id);
     }
+    engine.fetch_voices().map_err(|e| e.to_string())?;
+    eprintln!("{} voices ready", loqui_kokoro::ENGLISH_VOICES.len());
     Ok(())
 }
 

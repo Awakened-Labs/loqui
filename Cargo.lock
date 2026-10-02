@@ -1081,7 +1081,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "loqui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "hf-hub",
  "loqui-audio",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-audio"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flacenc",
  "mp3lame-encoder",
@@ -1107,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "loqui",
@@ -1120,7 +1120,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-g2p"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fancy-regex",
  "libm",
@@ -1133,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-kokoro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "loqui-g2p",
  "ort",
@@ -1143,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "getrandom 0.4.3",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "loqui-whisper"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "loqui-audio",
  "thiserror",

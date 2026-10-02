@@ -175,21 +175,40 @@ async fn oversized_speech_bodies_are_rejected() {
     assert_eq!(status, 413);
 }
 
+/// A `/v1/audio/speech` request for "hello" in `voice`, with the token.
+fn speech(address: &str, voice: &str) -> String {
+    let body = format!("{{\"model\":\"kokoro\",\"input\":\"hello\",\"voice\":\"{voice}\"}}");
+    format!(
+        "POST /v1/audio/speech HTTP/1.1\r\nHost: {}\r\n{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        host_of(address),
+        bearer(),
+        body.len()
+    )
+}
+
 #[tokio::test]
 async fn voice_ids_cannot_reach_the_filesystem() {
     let dir = TempDir::new("voice");
     let (addr, _stop) = start(loopback_config(&dir.0), &dir.0).await;
     for voice in ["../../etc/passwd", "zz_nonexistent"] {
-        let body = format!("{{\"model\":\"kokoro\",\"input\":\"hello\",\"voice\":\"{voice}\"}}");
-        let request = format!(
-            "POST /v1/audio/speech HTTP/1.1\r\nHost: {}\r\n{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            host_of(&addr),
-            bearer(),
-            body.len()
-        );
-        let (status, text) = send(&addr, &request).await;
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
         assert_eq!(status, 400, "{voice}: {text}");
         assert!(!text.contains("etc/passwd"), "errors must not echo input: {text}");
+    }
+}
+
+#[tokio::test]
+async fn bad_blends_are_refused_before_anything_is_fetched() {
+    // With downloads denied and an empty cache, fetching af_heart first
+    // would fail as a missing model (500); refusing first answers 400.
+    let dir = TempDir::new("blend");
+    let (addr, _stop) = start(loopback_config(&dir.0), &dir.0).await;
+    let huge = format!("3{}", "0".repeat(38));
+    let overflow = format!("af_heart({huge})+af_sky({huge})");
+    for voice in ["af_heart+zz_secret", "af_heart(1)+zz_secret(2)", "af_heart(.5)", "af_heart(1e2)", "af_heart(-1)", &overflow] {
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
+        assert_eq!(status, 400, "{voice}: {text}");
+        assert!(!text.contains("secret") && !text.contains(&huge), "errors must not echo input: {text}");
     }
 }
 
