@@ -1,4 +1,4 @@
-# Status: 2026-10-01
+# Status: 2026-10-02
 
 ## Milestones
 
@@ -10,10 +10,11 @@
 | M2 loqui-audio | done | out: WAV, FLAC, PCM, Ogg Opus, and MP3 behind the off-by-default `mp3` feature (LAME, LGPL). ffmpeg decodes both compressed formats to the exact sample count; Whisper transcribes Kokoro speech from each word for word; in: WAV, FLAC, MP3, AAC, Ogg Vorbis, and Opus in Ogg or WebM (opus-rs; sample counts match libopus). |
 | M3 g2p + kokoro + models | done | pinned revisions + SHA-256 for every model file |
 | M4 whisper + facade | done | `Engine`, lazy/TTL `Slot`, offline mode |
-| M5 server + CLI | done | 13 security integration tests; live-tested with an existing OpenAI-compatible client, unchanged |
+| M5 server + CLI | done | 16 security integration tests; live-tested with an existing OpenAI-compatible client, unchanged |
 | M6 parity + cut-over | done | STT WER 2.19% vs faster-whisper 2.28% on the same 250 clips; the `cuda` image serves both models on the GPU (speech at real-time factor 0.09, transcription 0.16) in 2.7 GB of GPU memory |
 | M7 client integration | done over HTTP | an existing OpenAI-compatible speech client, unchanged, speaks and transcribes through `loqui serve` |
 | M8 publish | done | 0.1.0 on crates.io; public repository; SECURITY.md (private reporting); docs/embedding.md |
+| Custom voices | done, unreleased (0.2.0) | named voices from `voices.toml`; `GET /v1/audio/voices` and `loqui voices`; blends with open-speech's grammar and a cache bounded by the voice packs (see `tools/parity/README.md` for blend parity) |
 
 Run `./scripts/gates.sh` before pushing; CI runs the same script, one gate
 per job. `--all-features` needs the CUDA and Vulkan toolkits; the `cuda`

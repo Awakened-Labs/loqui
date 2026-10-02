@@ -35,13 +35,21 @@ fn token_file(dir: &Path) -> PathBuf {
     path
 }
 
+fn builder(dir: &Path) -> loqui::EngineBuilder {
+    loqui::Engine::builder().cache_dir(dir.join("cache")).downloads(loqui::Downloads::Deny)
+}
+
 fn engine(dir: &Path) -> loqui::Engine {
-    loqui::Engine::builder().cache_dir(dir.join("cache")).downloads(loqui::Downloads::Deny).build().unwrap()
+    builder(dir).build().unwrap()
 }
 
 /// Starts a server; returns its address and a handle that stops it on drop.
 async fn start(config: ServerConfig, dir: &Path) -> (String, tokio::sync::oneshot::Sender<()>) {
-    let server = Server::bind(config, engine(dir)).await.unwrap();
+    start_with(config, engine(dir)).await
+}
+
+async fn start_with(config: ServerConfig, engine: loqui::Engine) -> (String, tokio::sync::oneshot::Sender<()>) {
+    let server = Server::bind(config, engine).await.unwrap();
     let address = server.address();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     tokio::spawn(server.run(async move {
@@ -175,22 +183,86 @@ async fn oversized_speech_bodies_are_rejected() {
     assert_eq!(status, 413);
 }
 
+/// A `/v1/audio/speech` request for "hello" in `voice`, with the token.
+fn speech(address: &str, voice: &str) -> String {
+    let body = format!("{{\"model\":\"kokoro\",\"input\":\"hello\",\"voice\":\"{voice}\"}}");
+    format!(
+        "POST /v1/audio/speech HTTP/1.1\r\nHost: {}\r\n{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        host_of(address),
+        bearer(),
+        body.len()
+    )
+}
+
 #[tokio::test]
 async fn voice_ids_cannot_reach_the_filesystem() {
     let dir = TempDir::new("voice");
     let (addr, _stop) = start(loopback_config(&dir.0), &dir.0).await;
     for voice in ["../../etc/passwd", "zz_nonexistent"] {
-        let body = format!("{{\"model\":\"kokoro\",\"input\":\"hello\",\"voice\":\"{voice}\"}}");
-        let request = format!(
-            "POST /v1/audio/speech HTTP/1.1\r\nHost: {}\r\n{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            host_of(&addr),
-            bearer(),
-            body.len()
-        );
-        let (status, text) = send(&addr, &request).await;
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
         assert_eq!(status, 400, "{voice}: {text}");
         assert!(!text.contains("etc/passwd"), "errors must not echo input: {text}");
     }
+}
+
+#[tokio::test]
+async fn bad_blends_are_refused_before_anything_is_fetched() {
+    // With downloads denied and an empty cache, fetching af_heart first
+    // would fail as a missing model (500); refusing first answers 400.
+    let dir = TempDir::new("blend");
+    let (addr, _stop) = start(loopback_config(&dir.0), &dir.0).await;
+    let huge = format!("3{}", "0".repeat(38));
+    let overflow = format!("af_heart({huge})+af_sky({huge})");
+    for voice in ["af_heart+zz_secret", "af_heart(1)+zz_secret(2)", "af_heart(.5)", "af_heart(1e2)", "af_heart(-1)", &overflow] {
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
+        assert_eq!(status, 400, "{voice}: {text}");
+        assert!(!text.contains("secret") && !text.contains(&huge), "errors must not echo input: {text}");
+    }
+}
+
+const WILL: &str = "am_puck(1)+am_liam(1)+am_onyx(0.5)";
+
+#[tokio::test]
+async fn the_voice_list_sits_behind_the_same_policy() {
+    let dir = TempDir::new("voices");
+    let (addr, _stop) = start_with(loopback_config(&dir.0), builder(&dir.0).voice("will", WILL).build().unwrap()).await;
+    let host = host_of(&addr);
+    assert_eq!(send(&addr, &get("/v1/audio/voices", &host, &[])).await.0, 401);
+    assert_eq!(send(&addr, &get("/v1/audio/voices", &host, &[&bearer(), "Origin: https://evil.example"])).await.0, 403);
+
+    let (status, text) = send(&addr, &get("/v1/audio/voices?model=kokoro", &host, &[&bearer()])).await;
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains(r#"{"gender":"female","id":"af_heart","language":"en-us","name":"Heart"}"#), "{text}");
+    assert!(text.contains(&format!(r#""blend":"{WILL}","gender":"male","id":"will""#)), "{text}");
+    assert_eq!(text.matches(r#""id":"#).count(), 29, "28 built-in voices and one named: {text}");
+}
+
+#[tokio::test]
+async fn named_voices_are_spoken_like_built_in_ones() {
+    // With downloads denied and an empty cache, a voice that passes
+    // validation fails later, at the missing weights (500); a voice that
+    // does not is refused (400). Which one a request gets shows how its
+    // voice was read, without any weights.
+    let dir = TempDir::new("named");
+    let (addr, _stop) = start_with(loopback_config(&dir.0), builder(&dir.0).voice("will", WILL).build().unwrap()).await;
+    for voice in ["will", "will(2)+af_sky(1)", "af_heart"] {
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
+        assert_eq!(status, 500, "{voice}: {text}");
+    }
+    for voice in ["bill", "Will", "will+bill"] {
+        let (status, text) = send(&addr, &speech(&addr, voice)).await;
+        assert_eq!(status, 400, "{voice}: {text}");
+    }
+}
+
+#[tokio::test]
+async fn a_disabled_capability_is_not_found() {
+    let dir = TempDir::new("disabled");
+    let (addr, _stop) = start_with(loopback_config(&dir.0), builder(&dir.0).tts(None).build().unwrap()).await;
+    let (status, text) = send(&addr, &speech(&addr, "af_heart")).await;
+    assert_eq!(status, 404, "{text}");
+    assert!(text.contains("not_enabled"), "{text}");
+    assert_eq!(send(&addr, &get("/v1/audio/voices", &host_of(&addr), &[&bearer()])).await.0, 404);
 }
 
 #[cfg(unix)]

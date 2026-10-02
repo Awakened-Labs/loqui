@@ -1,6 +1,6 @@
 //! `loqui`: local speech, served safely.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
@@ -31,8 +31,11 @@ enum Command {
     },
     /// Explain what `serve` would expose with these options, and flag risks.
     Doctor(ServeArgs),
-    /// Download model weights now, for hosts that will run with --offline.
+    /// Download model weights and every voice now, for hosts that will run
+    /// with --offline.
     Fetch(EngineArgs),
+    /// List the voices `speak` and `serve` accept, named voices included.
+    Voices(VoicesFile),
 }
 
 #[derive(Subcommand)]
@@ -43,6 +46,47 @@ enum TokenAction {
     Path,
     /// Replace the token. Clients using the old one stop working.
     Rotate,
+}
+
+#[derive(Args, Clone)]
+struct VoicesFile {
+    /// Named voices: a TOML file of `name = "blend"` lines, such as
+    /// `will = "am_puck(1)+am_liam(1)+am_onyx(0.5)"` [default:
+    /// $XDG_CONFIG_HOME/loqui/voices.toml, if it exists].
+    #[arg(long = "voices", env = "LOQUI_VOICES_FILE")]
+    path: Option<PathBuf>,
+}
+
+impl VoicesFile {
+    /// The file to read, if any.
+    fn path(&self) -> Option<PathBuf> {
+        voices_path(self.path.as_deref(), fs::config_dir().as_deref())
+    }
+
+    /// Its `(name, spec)` pairs; none without a file.
+    fn read(&self) -> Result<Vec<(String, String)>, String> {
+        self.path().map_or(Ok(Vec::new()), |path| read_voices(&path))
+    }
+}
+
+/// The voices file: the one named, else `voices.toml` in the config
+/// directory when there is one.
+fn voices_path(explicit: Option<&Path>, config_dir: Option<&Path>) -> Option<PathBuf> {
+    explicit.map(Path::to_path_buf).or_else(|| config_dir.map(|d| d.join("voices.toml")).filter(|p| p.exists()))
+}
+
+/// Reads `name = "spec"` pairs. Names and specs are checked when the engine
+/// is built; this only reads them.
+fn read_voices(path: &Path) -> Result<Vec<(String, String)>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let table: toml::Table = text.parse().map_err(|e| format!("{}: {e}", path.display()))?;
+    table
+        .into_iter()
+        .map(|(name, value)| match value {
+            toml::Value::String(spec) => Ok((name, spec)),
+            _ => Err(format!("{}: voice {name:?} must be a string such as \"af_bella(2)+af_sky(1)\"", path.display())),
+        })
+        .collect()
 }
 
 #[derive(Args, Clone)]
@@ -74,6 +118,8 @@ struct EngineArgs {
     /// Load models at startup rather than on first request.
     #[arg(long)]
     preload: bool,
+    #[command(flatten)]
+    voices: VoicesFile,
 }
 
 #[derive(Args, Clone)]
@@ -175,6 +221,9 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
         }));
     if let Some(dir) = &args.cache_dir {
         builder = builder.cache_dir(dir);
+    }
+    for (name, spec) in args.voices.read()? {
+        builder = builder.voice(name, spec);
     }
     #[cfg(feature = "whisper")]
     if want_stt && !args.no_stt {
@@ -297,6 +346,16 @@ fn doctor(args: &ServeArgs) -> Result<(), String> {
     }
     let cache = args.engine.cache_dir.clone().or_else(loqui::default_cache_dir);
     say(cache.is_some(), format!("model cache: {}", cache.map_or("none".into(), |c| c.display().to_string())));
+    if let Some(path) = args.engine.voices.path() {
+        // A bad file stops `serve`, so say so here.
+        match build_engine(&EngineArgs { preload: false, ..args.engine.clone() }, false, 4096, 0) {
+            Ok(engine) => {
+                let named = engine.voices().map_or(0, |v| v.iter().filter(|v| v.blend.is_some()).count());
+                say(true, format!("{named} named voice(s) from {}", path.display()));
+            }
+            Err(e) => say(false, format!("serve would refuse to start: {e}")),
+        }
+    }
     if problems == 0 { Ok(()) } else { Err(format!("{problems} warning(s)")) }
 }
 
@@ -341,12 +400,29 @@ fn transcribe(args: TranscribeArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn voices(file: VoicesFile) -> Result<(), String> {
+    let mut builder = Engine::builder();
+    for (name, spec) in file.read()? {
+        builder = builder.voice(name, spec);
+    }
+    // Lazy: nothing is loaded or fetched to list voices.
+    let voices = builder.build().and_then(|engine| engine.voices()).map_err(|e| e.to_string())?;
+    let width = voices.iter().map(|v| v.id.len()).max().unwrap_or(0);
+    for v in voices {
+        let line = format!("{:width$}  {}  {:7}  {}", v.id, v.language, v.gender, v.blend.unwrap_or_default());
+        println!("{}", line.trim_end());
+    }
+    Ok(())
+}
+
 fn fetch(args: EngineArgs) -> Result<(), String> {
     let engine = build_engine(&EngineArgs { preload: false, ..args }, true, 4096, 0)?;
     engine.preload().map_err(|e| e.to_string())?;
     for m in engine.models() {
         eprintln!("{} ready", m.id);
     }
+    engine.fetch_voices().map_err(|e| e.to_string())?;
+    eprintln!("{} voices ready", loqui_kokoro::ENGLISH_VOICES.len());
     Ok(())
 }
 
@@ -369,6 +445,7 @@ fn main() -> ExitCode {
         Command::Token { action } => token(action),
         Command::Doctor(args) => doctor(&args),
         Command::Fetch(args) => fetch(args),
+        Command::Voices(file) => voices(file),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -376,5 +453,65 @@ fn main() -> ExitCode {
             eprintln!("loqui: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scratch directory, removed on drop.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("loqui-cli-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn file(&self, name: &str, text: &str) -> PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, text).unwrap();
+            path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn voices_files_are_name_spec_pairs() {
+        let dir = TempDir::new("voices-ok");
+        let path = dir.file("voices.toml", "# my voices\nwill = \"am_puck(1)+am_liam(1)+am_onyx(0.5)\"\nnova = \"nova(3)+af_sky\"\n");
+        let mut voices = read_voices(&path).unwrap();
+        voices.sort();
+        assert_eq!(voices, [("nova".into(), "nova(3)+af_sky".into()), ("will".into(), "am_puck(1)+am_liam(1)+am_onyx(0.5)".into())]);
+    }
+
+    #[test]
+    fn voices_files_say_what_is_wrong_and_where() {
+        let dir = TempDir::new("voices-bad");
+        let table = read_voices(&dir.file("table.toml", "[will]\nblend = \"am_puck\"\n")).unwrap_err();
+        assert!(table.contains("table.toml") && table.contains("\"will\" must be a string"), "{table}");
+        let syntax = read_voices(&dir.file("syntax.toml", "will = am_puck\n")).unwrap_err();
+        assert!(syntax.contains("syntax.toml") && syntax.contains("line 1"), "{syntax}");
+        let missing = read_voices(&dir.0.join("absent.toml")).unwrap_err();
+        assert!(missing.contains("absent.toml"), "{missing}");
+    }
+
+    #[test]
+    fn the_default_voices_file_is_used_only_if_it_exists() {
+        let dir = TempDir::new("voices-default");
+        let explicit = dir.0.join("mine.toml");
+        assert_eq!(voices_path(Some(&explicit), Some(&dir.0)), Some(explicit.clone()), "named files are used even if absent");
+        assert_eq!(voices_path(None, Some(&dir.0)), None);
+        assert_eq!(voices_path(None, None), None);
+        let default = dir.file("voices.toml", "");
+        assert_eq!(voices_path(None, Some(&dir.0)), Some(default));
     }
 }

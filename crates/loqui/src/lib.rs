@@ -28,12 +28,14 @@
 mod models;
 mod slot;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 pub use loqui_audio::Format;
 pub use loqui_g2p::OovFallback;
+pub use loqui_kokoro::Blend;
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, default_cache_dir};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
@@ -139,6 +141,7 @@ pub struct EngineBuilder {
     max_input_chars: usize,
     max_audio_secs: u64,
     preload: bool,
+    voices: Vec<(String, String)>,
 }
 
 impl EngineBuilder {
@@ -187,7 +190,22 @@ impl EngineBuilder {
         self
     }
 
+    /// Names a voice: afterwards `name` may be spoken in, alone or inside a
+    /// blend, as if it were a built-in voice. `spec` is a blend of built-in
+    /// voices, such as `am_puck(1)+am_liam(1)+am_onyx(0.5)`.
+    ///
+    /// Names are lowercase ASCII letters, digits and `_`. A name may take
+    /// over an OpenAI name (`nova`), so clients that offer only OpenAI's
+    /// voices can reach it, but not a Kokoro-shaped one (`af_custom`), which
+    /// stays reserved for Kokoro's own voices. [`EngineBuilder::build`]
+    /// checks every name and spec.
+    pub fn voice(mut self, name: impl Into<String>, spec: impl Into<String>) -> Self {
+        self.voices.push((name.into(), spec.into()));
+        self
+    }
+
     pub fn build(self) -> Result<Engine, Error> {
+        let names = named_voices(self.voices)?;
         let cache = match self.cache_dir {
             Some(dir) => dir,
             None => {
@@ -223,6 +241,7 @@ impl EngineBuilder {
             #[cfg(feature = "whisper")]
             stt,
             stt_model,
+            names,
             max_input_chars: self.max_input_chars,
             max_audio_secs: self.max_audio_secs,
         });
@@ -244,6 +263,7 @@ struct Inner {
     #[cfg(feature = "whisper")]
     stt: Option<Slot<loqui_whisper::Whisper>>,
     stt_model: Option<String>,
+    names: BTreeMap<String, Named>,
     max_input_chars: usize,
     // Only transcription decodes uploads.
     #[cfg_attr(not(feature = "whisper"), allow(dead_code))]
@@ -272,6 +292,94 @@ impl Inner {
         {
             tracing::info!(kind = "stt", "idle model unloaded");
         }
+    }
+}
+
+/// A voice an application has named: its spec as written, and what that
+/// resolves to.
+struct Named {
+    spec: String,
+    blend: Blend,
+}
+
+/// Checks named voices. They are made only of built-in voices, never of
+/// each other, so there are no cycles and their order does not matter.
+/// Errors name the voice: it is the operator's configuration, not a
+/// caller's input.
+fn named_voices(voices: Vec<(String, String)>) -> Result<BTreeMap<String, Named>, Error> {
+    let defined: Vec<String> = voices.iter().map(|(name, _)| name.clone()).collect();
+    let mut names = BTreeMap::new();
+    for (name, spec) in voices {
+        let bad = |why: &str| Error::Config(format!("voice {name:?}: {why}"));
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') {
+            return Err(bad("names may contain only lowercase ASCII letters, digits and _"));
+        }
+        if is_kokoro_shaped(&name) {
+            return Err(bad("names shaped like Kokoro's (af_, bm_, ...) are reserved for its own voices"));
+        }
+        let blend = Blend::parse(&spec, |_| None).map_err(|e| bad(&e.to_string()))?;
+        if let Some((id, _)) = blend.parts().iter().find(|(id, _)| !loqui_kokoro::ENGLISH_VOICES.contains(&id.as_str())) {
+            return Err(bad(&if defined.contains(id) {
+                format!("{id} is a named voice; named voices are made of built-in voices only")
+            } else {
+                format!("{id} is not a built-in voice")
+            }));
+        }
+        if names.insert(name.clone(), Named { spec: spec.trim().to_owned(), blend }).is_some() {
+            return Err(bad("named twice"));
+        }
+    }
+    Ok(names)
+}
+
+/// A letter, `f` or `m`, then `_`: how every Kokoro voice is named.
+fn is_kokoro_shaped(name: &str) -> bool {
+    matches!(name.as_bytes(), [lang, b'f' | b'm', b'_', ..] if lang.is_ascii_lowercase())
+}
+
+/// A voice [`Engine::speak`] accepts, as open-speech's `/v1/audio/voices`
+/// describes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct VoiceInfo {
+    /// What to pass as [`SpeakRequest::voice`].
+    pub id: String,
+    /// `Heart` for `af_heart`; a named voice's own name.
+    pub name: String,
+    /// The accent it speaks with: `en-us` or `en-gb`.
+    pub language: &'static str,
+    /// `female` or `male`, or `unknown` for a blend of both.
+    pub gender: &'static str,
+    /// A named voice's spec, as configured; `None` for a built-in voice.
+    pub blend: Option<String>,
+}
+
+impl VoiceInfo {
+    fn builtin(id: &str) -> Self {
+        let mut name = id.get(3..).unwrap_or(id).to_owned();
+        if let Some(initial) = name.get_mut(..1) {
+            initial.make_ascii_uppercase();
+        }
+        Self { id: id.to_owned(), name, language: language(id), gender: gender(id), blend: None }
+    }
+
+    fn named(name: &str, voice: &Named) -> Self {
+        let mut genders = voice.blend.audible().map(|(id, _)| gender(id));
+        let first = genders.next().unwrap_or("unknown");
+        let gender = if genders.all(|g| g == first) { first } else { "unknown" };
+        Self { id: name.to_owned(), name: name.to_owned(), language: language(voice.blend.lead()), gender, blend: Some(voice.spec.clone()) }
+    }
+}
+
+fn language(id: &str) -> &'static str {
+    if id.starts_with('b') { "en-gb" } else { "en-us" }
+}
+
+fn gender(id: &str) -> &'static str {
+    match id.as_bytes().get(1) {
+        Some(b'f') => "female",
+        Some(b'm') => "male",
+        _ => "unknown",
     }
 }
 
@@ -320,8 +428,8 @@ fn voice_file(id: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct SpeakRequest {
     pub text: String,
-    /// A voice spec: `af_heart`, an OpenAI alias (`alloy`), or a blend
-    /// (`af_bella(2)+af_sky(1)`).
+    /// A voice spec: `af_heart`, an OpenAI name (`alloy`), or a blend
+    /// (`af_bella(2)+af_sky(1)`; see [`Blend`]).
     pub voice: String,
     /// 0.25 to 4.0.
     pub speed: f32,
@@ -393,13 +501,19 @@ impl Engine {
             max_input_chars: 4096,
             max_audio_secs: 1800,
             preload: false,
+            voices: Vec::new(),
         }
     }
 
-    /// Loads every enabled model now.
+    /// Loads every enabled model now, and fetches the voices that named
+    /// voices are made of, so a host running with [`Downloads::Deny`] finds
+    /// a missing one at startup rather than on the first request.
     pub fn preload(&self) -> Result<(), Error> {
         if let Some(slot) = &self.inner.tts {
             slot.get()?;
+            for named in self.inner.names.values() {
+                named.blend.audible().try_for_each(|(id, _)| self.fetch_voice(id))?;
+            }
         }
         #[cfg(feature = "whisper")]
         if let Some(slot) = &self.inner.stt {
@@ -436,9 +550,31 @@ impl Engine {
         self.inner.stt_model.as_deref()
     }
 
-    /// The English voices this engine can speak with.
-    pub fn voices(&self) -> &'static [&'static str] {
-        loqui_kokoro::ENGLISH_VOICES
+    /// The voices [`Engine::speak`] accepts by name: the built-in English
+    /// voices, then any named with [`EngineBuilder::voice`]. Any blend of
+    /// these is accepted too.
+    pub fn voices(&self) -> Result<Vec<VoiceInfo>, Error> {
+        self.inner.tts.as_ref().ok_or(Error::Disabled("text-to-speech"))?;
+        let builtin = loqui_kokoro::ENGLISH_VOICES.iter().map(|id| VoiceInfo::builtin(id));
+        Ok(builtin.chain(self.inner.names.iter().map(|(name, voice)| VoiceInfo::named(name, voice))).collect())
+    }
+
+    /// Downloads every voice pack on the roster now (about 15 MB), so any
+    /// voice or blend can be spoken on a host that later runs with
+    /// [`Downloads::Deny`].
+    pub fn fetch_voices(&self) -> Result<(), Error> {
+        self.inner.tts.as_ref().ok_or(Error::Disabled("text-to-speech"))?;
+        loqui_kokoro::ENGLISH_VOICES.iter().try_for_each(|id| self.fetch_voice(id))
+    }
+
+    /// A voice spec as this engine reads it: named voices first, then
+    /// OpenAI's names, then pack ids.
+    fn resolve(&self, spec: &str) -> Result<Blend, Error> {
+        Ok(Blend::parse(spec, |id| self.inner.names.get(id).map(|named| &named.blend))?)
+    }
+
+    fn fetch_voice(&self, id: &str) -> Result<(), Error> {
+        models::fetch(&self.inner.cache, &models::KOKORO_REPO, &voice_file(id), None, self.inner.downloads).map(drop)
     }
 
     pub fn speak(&self, request: &SpeakRequest) -> Result<Speech, Error> {
@@ -453,16 +589,17 @@ impl Engine {
         if !(0.25..=4.0).contains(&request.speed) {
             return Err(Error::Invalid(format!("speed {} is outside 0.25 to 4.0", request.speed)));
         }
-        // Only voices on the roster are fetched, so a request cannot make
-        // the engine download arbitrary files.
-        for (id, _) in loqui_kokoro::parse_voice_spec(&request.voice)? {
-            if !loqui_kokoro::ENGLISH_VOICES.contains(&id.as_str()) {
-                return Err(Error::Invalid(format!("unknown voice {id:?}")));
-            }
-            models::fetch(&self.inner.cache, &models::KOKORO_REPO, &voice_file(&id), None, self.inner.downloads)?;
+        // Every part is checked before any is fetched, and only voices on
+        // the roster are fetched, so a request cannot make the engine
+        // download arbitrary files, nor anything at all for a bad voice.
+        let voice = self.resolve(&request.voice)?;
+        if voice.parts().iter().any(|(id, _)| !loqui_kokoro::ENGLISH_VOICES.contains(&id.as_str())) {
+            // The id is not echoed: it is caller input that failed validation.
+            return Err(Error::Invalid("unknown voice".into()));
         }
+        voice.audible().try_for_each(|(id, _)| self.fetch_voice(id))?;
         let kokoro = slot.get()?;
-        let samples = kokoro.speak(&request.text, &request.voice, request.speed)?;
+        let samples = kokoro.speak(&request.text, &voice, request.speed)?;
         let pcm = loqui_audio::Pcm { samples, rate: loqui_kokoro::SAMPLE_RATE };
         let duration_secs = pcm.duration_secs();
         let audio = loqui_audio::encode(&pcm, request.format)?;
@@ -482,5 +619,87 @@ impl Engine {
             threads: None,
         };
         Ok(whisper.transcribe(&pcm.samples, &options)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An engine that loads nothing: building is lazy until something
+    /// is spoken.
+    fn engine(voices: &[(&str, &str)]) -> Result<Engine, Error> {
+        let builder = Engine::builder().cache_dir(std::env::temp_dir().join("loqui-unused-cache")).downloads(Downloads::Deny);
+        voices.iter().fold(builder, |b, (name, spec)| b.voice(*name, *spec)).build()
+    }
+
+    fn close(blend: &Blend, expected: &[(&str, f32)]) -> bool {
+        let parts = blend.parts();
+        parts.len() == expected.len() && parts.iter().zip(expected).all(|((a, x), (b, y))| a == b && (x - y).abs() < 1e-6)
+    }
+
+    #[test]
+    fn named_voices_are_checked_when_the_engine_is_built() {
+        let refused = [
+            ("Will", "am_puck"),
+            ("will smith", "am_puck"),
+            ("", "am_puck"),
+            ("af_custom", "am_puck"),
+            ("jf_alpha", "am_puck"),
+            ("will", "am_puck(x)"),
+            ("will", "zz_nobody"),
+            ("will", "jf_alpha"),
+        ];
+        for (name, spec) in refused {
+            let err = engine(&[(name, spec)]).expect_err(&format!("{name:?} = {spec:?}"));
+            assert!(matches!(err, Error::Config(_)), "{name:?} = {spec:?}: {err}");
+        }
+        assert!(matches!(engine(&[("will", "am_puck"), ("will", "am_liam")]), Err(Error::Config(_))));
+        let err = engine(&[("will", "am_puck"), ("bill", "will(2)+am_liam")]).unwrap_err().to_string();
+        assert!(err.contains("built-in voices only"), "{err}");
+    }
+
+    #[test]
+    fn named_voices_resolve_alone_and_inside_blends() {
+        let engine = engine(&[("will", "am_puck(1)+am_liam(1)+am_onyx(0.5)")]).unwrap();
+        assert!(close(&engine.resolve("will").unwrap(), &[("am_puck", 0.4), ("am_liam", 0.4), ("am_onyx", 0.2)]));
+        let blend = engine.resolve("will(2)+af_sky(1)").unwrap();
+        assert!(close(&blend, &[("am_puck", 0.8 / 3.0), ("am_liam", 0.8 / 3.0), ("am_onyx", 0.4 / 3.0), ("af_sky", 1.0 / 3.0)]));
+    }
+
+    #[test]
+    fn a_name_can_take_over_an_openai_name_and_use_it() {
+        let engine = engine(&[("nova", "nova(3)+af_sky(1)")]).unwrap();
+        assert!(close(&engine.resolve("nova").unwrap(), &[("af_nova", 0.75), ("af_sky", 0.25)]));
+        assert!(close(&engine.resolve("alloy").unwrap(), &[("af_heart", 1.0)]));
+    }
+
+    #[test]
+    fn unknown_voices_are_refused_without_echoing_them() {
+        let engine = engine(&[]).unwrap();
+        let err = engine.speak(&SpeakRequest { voice: "af_heart+zz_secret".into(), ..SpeakRequest::new("hello") }).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err}");
+        assert!(!err.to_string().contains("secret"), "{err}");
+    }
+
+    #[test]
+    fn voices_lists_the_roster_then_named_voices() {
+        let engine = engine(&[("will", "am_puck(1)+am_liam(1)"), ("duo", " af_sky + am_adam "), ("lady", "bf_emma(0)+af_sky")]).unwrap();
+        let voices = engine.voices().unwrap();
+        assert_eq!(voices.len(), loqui_kokoro::ENGLISH_VOICES.len() + 3);
+        let heart = voices.iter().find(|v| v.id == "af_heart").unwrap();
+        assert_eq!((heart.name.as_str(), heart.language, heart.gender, heart.blend.as_deref()), ("Heart", "en-us", "female", None));
+        let george = voices.iter().find(|v| v.id == "bm_george").unwrap();
+        assert_eq!((george.name.as_str(), george.language, george.gender), ("George", "en-gb", "male"));
+        let named: Vec<_> = voices[loqui_kokoro::ENGLISH_VOICES.len()..].iter().map(|v| (v.id.as_str(), v.language, v.gender)).collect();
+        // Sorted by name; a weightless lead sets the accent but not the gender.
+        assert_eq!(named, [("duo", "en-us", "unknown"), ("lady", "en-gb", "female"), ("will", "en-us", "male")]);
+        assert_eq!(voices.last().unwrap().blend.as_deref(), Some("am_puck(1)+am_liam(1)"));
+    }
+
+    #[test]
+    fn voices_needs_text_to_speech() {
+        let engine = Engine::builder().cache_dir(std::env::temp_dir()).tts(None).build().unwrap();
+        assert!(matches!(engine.voices(), Err(Error::Disabled(_))));
     }
 }

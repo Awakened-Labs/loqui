@@ -19,10 +19,12 @@ name = "loqui"
 path = "src/main.rs"
 
 [dependencies]
-loqui = { path = "../loqui", version = "0.1.0" }
-loqui-server = { path = "../loqui-server", version = "0.1.0" }
-loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+loqui = { path = "../loqui", version = "0.2.0" }
+loqui-server = { path = "../loqui-server", version = "0.2.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.2.0" }
 clap = { version = "4", features = ["derive", "env"] }
+# Named voices are read from a TOML file. Only reading: no writer.
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

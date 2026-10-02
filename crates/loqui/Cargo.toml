@@ -21,12 +21,12 @@ features = ["whisper", "mp3"]
 workspace = true
 
 [dependencies]
-loqui-audio = { path = "../loqui-audio", version = "0.1.0" }
-loqui-g2p = { path = "../loqui-g2p", version = "0.1.0" }
-loqui-kokoro = { path = "../loqui-kokoro", version = "0.1.0" }
+loqui-audio = { path = "../loqui-audio", version = "0.2.0" }
+loqui-g2p = { path = "../loqui-g2p", version = "0.2.0" }
+loqui-kokoro = { path = "../loqui-kokoro", version = "0.2.0" }
 # Speech-to-text needs a C++ toolchain and cmake (whisper.cpp), so it is a
 # feature; a text-to-speech-only build needs neither.
-loqui-whisper = { path = "../loqui-whisper", version = "0.1.0", optional = true }
+loqui-whisper = { path = "../loqui-whisper", version = "0.2.0", optional = true }
 
 # Model downloads, pinned to commit revisions. The sync API over ureq, with
 # rustls rather than OpenSSL, and no tokio: the engine is synchronous.

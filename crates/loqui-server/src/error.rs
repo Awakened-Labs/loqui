@@ -47,19 +47,22 @@ impl ApiError {
 
 impl From<loqui::Error> for ApiError {
     fn from(e: loqui::Error) -> Self {
+        // Before the client-error check, which also counts a disabled
+        // capability as the caller's doing: it is, but the answer is 404.
+        if let loqui::Error::Disabled(what) = e {
+            return Self::new(
+                StatusCode::NOT_FOUND,
+                "invalid_request_error",
+                "not_enabled",
+                format!("{what} is not enabled on this server"),
+            );
+        }
         if e.is_client_error() {
             return Self::bad_request("invalid_request", e.to_string());
         }
-        match e {
-            loqui::Error::Disabled(what) => {
-                Self::new(StatusCode::NOT_FOUND, "invalid_request_error", "not_enabled", format!("{what} is not enabled on this server"))
-            }
-            other => {
-                // The detail can name cache paths; log it, return a summary.
-                tracing::error!(error = %other, "request failed");
-                Self::internal("the request could not be completed; see the server log")
-            }
-        }
+        // The detail can name cache paths; log it, return a summary.
+        tracing::error!(error = %e, "request failed");
+        Self::internal("the request could not be completed; see the server log")
     }
 }
 

@@ -36,6 +36,10 @@ points of phoneme error; see the log below.
     # same phonemes through three runtimes
     cargo run --release -p loqui-kokoro --example speak -- model.onnx voices/ out.wav "PHONEMES" --phonemes --raw out.f32
     docker exec open-speech /opt/venv/bin/python /tmp/parity/kokoro_ref.py onnx ... / torch ...
+    # blends: the same, with a blend on each side
+    cargo run --release -p loqui-kokoro --example speak -- model.onnx voices/ out.wav "PHONEMES" --phonemes --raw out.f32 --voice "af_bella(2)+af_heart(1)"
+    kokoro_ref.py onnx model.onnx "voices/af_bella.bin(2)+voices/af_heart.bin(1)" "PHONEMES" ref.f32
+    kokoro_ref.py torch "af_bella(2)+af_heart(1)" "PHONEMES" ref.f32
     # intelligibility: speak with both systems, transcribe with one Whisper, score
     python3 tools/parity/e2e.py speak corpus.txt container-wavs/
     cargo run --release -p loqui-kokoro --example speak -- model.onnx voices/ loqui-wavs/ --lines corpus.txt
@@ -56,6 +60,33 @@ GPU inside the CUDA dev image (`docker/cuda.Dockerfile`, target `toolchain`):
     python3 tools/parity/e2e.py wer corpus.txt stt-loqui.txt
 
 ## Results log
+
+### 2026-10-02: voice blends
+
+The phonemes of "The birch canoe slid on the smooth planks, and the quick
+brown fox jumped over the lazy dog." were spoken three ways:
+- by loqui (`examples/speak.rs --phonemes`);
+- by Python onnxruntime, with the ONNX packs mixed in numpy;
+- by hexgrad's PyTorch KModel, with its `.pt` packs mixed as open-speech's
+  `_blend_voices` mixes them.
+
+The references ran in a throwaway container of the open-speech image, CPU
+only, with no network and its model cache mounted read-only.
+
+| Voice | Samples (all three) | loqui vs Python ONNX | loqui vs PyTorch | ONNX vs PyTorch |
+|---|---|---|---|---|
+| `af_bella` (baseline) | 148,200 | 0.9991 | 0.9936 | 0.9936 |
+| `af_bella(2)+af_heart(1)` | 145,200 | 0.9989 | 0.9941 | 0.9941 |
+
+A blend agrees with the references as closely as a single voice does. The
+style vector drives Kokoro's duration predictor, so equal sample counts in
+all three runtimes, different from the single voice's, show that each
+runtime used the same blended style.
+
+`af_heart` was chosen because it and `af_bella` were the only packs in the
+container's cache. No end-to-end WER was run for blends: it would need the
+open-speech server running beside the live one, and a blend changes only
+the style vector, which the comparison above measures directly.
 
 ### 2026-09-30: CUDA (docker/cuda.Dockerfile, RTX 2070 Super)
 

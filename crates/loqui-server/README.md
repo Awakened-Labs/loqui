@@ -2,7 +2,8 @@
 
 A safe-by-default, OpenAI-compatible speech server around a loqui `Engine`:
 `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`,
-`/v1/models` and `/health`, and nothing else.
+`/v1/models`, `/health`, and open-speech's read-only `/v1/audio/voices`, and
+nothing else.
 
 - A Unix socket for this user by default; TCP must be asked for, and
   network-wide TCP twice.

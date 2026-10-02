@@ -54,7 +54,7 @@ is `wav`. Everything else in loqui is MIT and permissively licensed.
 
 ## API
 
-OpenAI-compatible, and nothing else:
+OpenAI-compatible, plus open-speech's voice list, and nothing else:
 
 | Route | |
 |---|---|
@@ -62,11 +62,31 @@ OpenAI-compatible, and nothing else:
 | `POST /v1/audio/transcriptions` | multipart `file`, `language`, `prompt`, `temperature`, `response_format: json\|text\|verbose_json\|srt\|vtt` |
 | `POST /v1/audio/translations` | as above, into English |
 | `GET /v1/models` | ids with `owned_by: loqui/tts\|loqui/stt` and a `task` field |
+| `GET /v1/audio/voices` | `{"voices": [{id, name, language, gender}]}` as open-speech lists them; named voices add `blend` |
 | `GET /health` | `{"status":"ok"}` only |
 
-Voices: the 28 American and British Kokoro voices (`af_heart` default),
-OpenAI names (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`), and blends
-such as `af_bella(2)+af_sky(1)`.
+### Voices
+
+The 28 American and British Kokoro voices (`af_heart` is the default), and
+OpenAI's names for six of them (`alloy`, `echo`, `fable`, `onyx`, `nova`,
+`shimmer`). Any of them can be mixed, as in open-speech:
+`af_bella(2)+af_sky(1)` is two parts Bella to one part Sky. The first voice
+sets the accent, even at weight 0, so `bf_emma(0)+af_sky` is Sky with a
+British accent.
+
+Give the blends you use names in `voices.toml`, in loqui's config directory
+(`~/.config/loqui/`), or in a file passed with `--voices`. Any client can
+then ask for them by name, alone or inside another blend:
+
+```toml
+will = "am_puck(1)+am_liam(1)+am_onyx(0.5)"
+nova = "nova(3)+af_sky(1)"   # replaces OpenAI's nova, for clients that offer only OpenAI's six
+```
+
+A name is lowercase letters, digits and `_`; Kokoro-shaped names (`af_*`)
+are kept for Kokoro's own voices. `loqui voices` lists every voice, named
+ones included, and `loqui doctor` checks the file. Names are read when the
+server starts, never over HTTP.
 
 ## Crates
 

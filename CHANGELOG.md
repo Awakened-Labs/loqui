@@ -5,6 +5,57 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
+## [Unreleased]
+
+Custom voices: blends can be given names, and the blends themselves are
+hardened.
+
+### Added
+
+- Named voices. `EngineBuilder::voice(name, spec)` names a blend of
+  built-in voices. Clients can then use the name like any voice, alone or
+  inside another blend. A name may replace an OpenAI name such as `nova`.
+  `build()` checks every name and spec.
+- `loqui serve`, `speak`, `fetch` and `doctor` read named voices from a
+  TOML file: `--voices FILE` or `LOQUI_VOICES_FILE`, by default
+  `voices.toml` in the config directory. `doctor` flags a file that would
+  stop `serve`.
+- `GET /v1/audio/voices`, open-speech's voice list: built-in voices, then
+  named voices with their `blend`. It is read-only and sits behind the same
+  policy as every other route.
+- `loqui voices` lists the same, and `Engine::voices()` returns it as
+  `VoiceInfo`.
+- `Engine::fetch_voices()`. `loqui fetch` now prepares every voice pack,
+  not only `af_heart`, so any voice or blend works offline. `preload` also
+  fetches the packs that named voices need.
+- `loqui_kokoro::Blend`: a parsed voice spec, re-exported as `loqui::Blend`.
+
+### Changed
+
+- **Breaking:**
+  - `Kokoro::speak` and `speak_raw` take a `&Blend` instead of a `&str`.
+  - `parse_voice_spec` is replaced by `Blend::parse` and `str::parse`.
+  - `Engine::voices()` returns `Result<Vec<VoiceInfo>, Error>`.
+  - `loqui_kokoro::Error` is `#[non_exhaustive]`.
+- Blend weights follow open-speech's grammar exactly (`2`, `0.5`).
+  `1e2`, `.5` and `+1` are refused.
+- OpenAI names resolve inside blends as well (`alloy+af_sky`).
+- Blends are mixed for each request instead of cached. Only voice packs are
+  kept, so memory no longer grows with each new weighting a client sends.
+- A voice pack that cannot be read is a server error (500), not a client
+  error that named a cache path.
+
+### Fixed
+
+- Weights large enough to overflow their sum are refused. Before, they gave
+  a silent voice.
+- Every voice in a request is checked before any pack is fetched. Before,
+  `af_heart+bad` fetched `af_heart`, and with downloads denied it answered
+  500 rather than 400.
+- An unknown voice is refused without its name being echoed.
+- A capability the server was built without (speech or transcription) now
+  answers 404 `not_enabled`, as intended, rather than 400.
+
 ## [0.1.0] - 2026-10-01
 
 The first release: local Kokoro text-to-speech and Whisper speech-to-text
