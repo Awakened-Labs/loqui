@@ -89,9 +89,12 @@ cross-site page learns nothing from the difference between 401 and 200:
    `--public-health` is given.
 
 There is deliberately nothing else on the surface. The server has no web
-UI, no OpenAPI document and no model management over HTTP: models are
-chosen when it starts. A request can only download voice packs on the
-built-in roster, never an arbitrary file.
+UI, no OpenAPI document and no model or voice management over HTTP: models
+and named voices are chosen when it starts. `GET /v1/audio/voices` lists
+the voices read-only, behind the same checks as every other route. A named
+voice is made only of built-in voices, so a request can only download voice
+packs on the built-in roster, never an arbitrary file. Every voice in a
+request is checked before any pack is fetched.
 
 ### Limits
 

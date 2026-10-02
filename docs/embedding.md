@@ -55,6 +55,16 @@ server does:
 - Uploaded audio is parsed by pure-Rust decoders (symphonia and opus-rs).
   Treat a decoder bug as a possible denial of service, and keep the caps.
 
+**Named voices.** `EngineBuilder::voice("will", "am_puck(1)+am_liam(1)")`
+names a blend of built-in voices; afterwards `"will"` works anywhere a
+voice does, inside other blends too. `build()` checks every name and spec
+and returns `Error::Config` for a bad one, so a mistake surfaces at
+startup. `Engine::voices()` lists the built-in and named voices, and
+`preload(true)` also fetches the packs named voices need, so a cache
+prepared for `Downloads::Deny` is checked at startup too (`loqui fetch`
+fetches every pack). If you use `loqui-kokoro` directly, a voice is a
+`loqui_kokoro::Blend`: `kokoro.speak(text, &"af_bella(2)+af_sky(1)".parse()?, 1.0)`.
+
 **Concurrency.** `Engine` is cheap to clone, and the clones share the loaded
 models. Every call is synchronous and CPU- or GPU-bound, from tens of
 milliseconds to several seconds, so in async code run it under
