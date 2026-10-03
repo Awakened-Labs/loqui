@@ -231,7 +231,6 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
             model: args.stt_model.clone(),
             device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
             idle_ttl: (args.stt_idle_secs > 0).then(|| std::time::Duration::from_secs(args.stt_idle_secs)),
-            ..loqui::SttConfig::default()
         }));
     }
     #[cfg(not(feature = "whisper"))]

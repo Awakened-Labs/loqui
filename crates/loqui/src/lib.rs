@@ -33,9 +33,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-pub use loqui_audio::Format;
+// The error types `Error` wraps, so callers can match on the cause.
+pub use loqui_audio::{Error as AudioError, Format};
 pub use loqui_g2p::OovFallback;
-pub use loqui_kokoro::Blend;
+pub use loqui_kokoro::{Blend, Error as TtsError};
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, WhisperModel, default_cache_dir, whisper_model};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
@@ -131,8 +132,6 @@ pub struct SttConfig {
     /// A name from [`WHISPER_MODELS`], e.g. `"large-v3-turbo"`.
     pub model: String,
     pub device: loqui_whisper::Device,
-    /// CPU threads for whisper.cpp; `None` lets it choose.
-    pub threads: Option<usize>,
     /// Unload after this long unused; `None` keeps it resident. Whisper
     /// large is 1.6 GB, so the default frees it after ten idle minutes.
     pub idle_ttl: Option<Duration>,
@@ -141,7 +140,7 @@ pub struct SttConfig {
 #[cfg(feature = "whisper")]
 impl Default for SttConfig {
     fn default() -> Self {
-        Self { model: "large-v3-turbo".into(), device: loqui_whisper::Device::Cpu, threads: None, idle_ttl: Some(Duration::from_secs(600)) }
+        Self { model: "large-v3-turbo".into(), device: loqui_whisper::Device::Cpu, idle_ttl: Some(Duration::from_secs(600)) }
     }
 }
 
@@ -241,10 +240,6 @@ impl EngineBuilder {
         let stt_model = self.stt.as_ref().map(|cfg| cfg.model.clone());
         #[cfg(not(feature = "whisper"))]
         let stt_model = None;
-        // whisper.cpp takes a 16-bit count; more threads than that is no
-        // different from as many as it allows.
-        #[cfg(feature = "whisper")]
-        let stt_threads = self.stt.as_ref().and_then(|cfg| cfg.threads).map(|t| u16::try_from(t).unwrap_or(u16::MAX));
         #[cfg(feature = "whisper")]
         let stt = self.stt.map(|cfg| {
             let cache = cache.clone();
@@ -260,8 +255,6 @@ impl EngineBuilder {
             #[cfg(feature = "whisper")]
             stt,
             stt_model,
-            #[cfg(feature = "whisper")]
-            stt_threads,
             names,
             max_input_chars: self.max_input_chars,
             max_audio_secs: self.max_audio_secs,
@@ -285,8 +278,6 @@ struct Inner {
     #[cfg(feature = "whisper")]
     stt: Option<Slot<loqui_whisper::Whisper>>,
     stt_model: Option<String>,
-    #[cfg(feature = "whisper")]
-    stt_threads: Option<u16>,
     names: BTreeMap<String, Named>,
     max_input_chars: usize,
     // Only transcription decodes uploads.
@@ -475,7 +466,7 @@ pub struct Speech {
 }
 
 #[cfg(feature = "whisper")]
-pub use loqui_whisper::{Device as SttDevice, Segment, Task, Transcription};
+pub use loqui_whisper::{Device as SttDevice, Error as SttError, Segment, Task, Transcription};
 
 /// A speech-to-text request.
 #[cfg(feature = "whisper")]
@@ -487,6 +478,8 @@ pub struct TranscribeRequest {
     pub prompt: Option<String>,
     pub task: Task,
     pub temperature: f32,
+    /// CPU threads for whisper.cpp; `None` lets it choose.
+    pub threads: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -732,7 +725,7 @@ impl Engine {
             prompt: request.prompt.clone(),
             task: request.task,
             temperature: request.temperature,
-            threads: self.inner.stt_threads,
+            threads: request.threads,
         };
         Ok(whisper.transcribe(&pcm.samples, &options)?)
     }

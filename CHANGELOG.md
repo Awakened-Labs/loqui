@@ -39,7 +39,10 @@ weights without loading them.
   models in memory.
 - `loqui doctor` reports how many model files are not cached. With
   `--offline`, that is a warning.
-- `SttConfig::threads`: the CPU threads whisper.cpp uses.
+- `TranscribeRequest::threads`: the CPU threads whisper.cpp uses for one
+  transcription.
+- `AudioError`, `TtsError` and `SttError`: the error types `Error` wraps,
+  re-exported so callers can match on the cause.
 - `WhisperModel` and `whisper_model(name)`: each known Whisper model's file,
   digest and size, and whether it is English-only.
 - The `whisper-cuda` feature: CUDA for Whisper only, with Kokoro left on the
@@ -55,7 +58,7 @@ weights without loading them.
   - `parse_voice_spec` is replaced by `Blend::parse` and `str::parse`.
   - `Engine::voices()` returns `Result<Vec<VoiceInfo>, Error>`.
   - `WHISPER_MODELS` lists `WhisperModel`s rather than tuples.
-  - `SttConfig` has a `threads` field.
+  - `TranscribeRequest` has a `threads` field.
   - `loqui_kokoro::Error` is `#[non_exhaustive]`.
 - Blend weights follow open-speech's grammar exactly (`2`, `0.5`).
   `1e2`, `.5` and `+1` are refused.
