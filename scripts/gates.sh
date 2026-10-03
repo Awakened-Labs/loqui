@@ -17,7 +17,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 fmt() { cargo fmt --all --check; }
-clippy() { cargo clippy --workspace --all-targets --locked -- -D warnings; }
+clippy() {
+    cargo clippy --workspace --all-targets --locked -- -D warnings
+    # Nothing in the workspace enables `unguarded-opus`; lint what it selects.
+    cargo clippy -p loqui-audio --features unguarded-opus --all-targets --locked -- -D warnings
+}
 test() { cargo test --workspace --locked; }
 tts-only() { cargo clippy -p loqui-cli --no-default-features --locked -- -D warnings; }
 mp3() {

@@ -33,7 +33,8 @@ Whisper but cannot run Kokoro on the GPU. The image is 3.3 GB (open-speech:
   with hf-hub 1.x, an API migration not yet done.
 - Opus input is refused on CPUs with AVX but no FMA (Sandy/Ivy Bridge):
   opus-rs crashes there (restsend/opus-rs#30). Drop the guard in
-  `loqui-audio/src/opus.rs` once a release carries #31.
+  `loqui-audio/src/opus.rs` once a release carries #31. Until then, builds
+  that patch opus-rs with #31 can enable `unguarded-opus`.
 - Opus output is 64 kbps CELT, encoded from 48 kHz, to route around two
   opus-rs 0.1.34 encoder bugs: 24 kHz input comes out as garbage in every
   mode (restsend/opus-rs#37), and below 64 kbps the SILK/hybrid paths mangle

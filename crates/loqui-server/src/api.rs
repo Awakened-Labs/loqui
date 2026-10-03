@@ -259,6 +259,7 @@ mod stt {
             prompt: upload.prompt,
             task,
             temperature: upload.temperature.unwrap_or(0.0),
+            threads: None,
         };
         let bytes = request.audio.len();
         let _permit = state.stt_gate.enter().await?;

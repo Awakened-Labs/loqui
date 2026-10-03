@@ -30,6 +30,12 @@ pub(crate) struct Pinned {
     pub revision: &'static str,
 }
 
+impl Pinned {
+    fn hf_repo(&self) -> Repo {
+        Repo::with_revision(self.repo.to_owned(), RepoType::Model, self.revision.to_owned())
+    }
+}
+
 pub(crate) const KOKORO_REPO: Pinned =
     Pinned { repo: "onnx-community/Kokoro-82M-v1.0-ONNX", revision: "1939ad2a8e416c0acfeecc08a694d14ef25f2231" };
 #[cfg(feature = "whisper")]
@@ -46,39 +52,93 @@ pub enum KokoroVariant {
 }
 
 impl KokoroVariant {
-    /// The file and its SHA-256, from the repository's LFS records at the
-    /// pinned revision.
-    pub(crate) fn file(self) -> (&'static str, &'static str) {
+    /// The file, its SHA-256 and its size, from the repository's LFS records
+    /// at the pinned revision.
+    pub(crate) fn file(self) -> PinnedFile {
         match self {
-            Self::Fp32 => ("onnx/model.onnx", "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb"),
-            Self::Fp16 => ("onnx/model_fp16.onnx", "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a"),
-            Self::Quantized => ("onnx/model_quantized.onnx", "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478"),
+            Self::Fp32 => PinnedFile {
+                file: "onnx/model.onnx",
+                sha256: "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb",
+                bytes: 325_532_232,
+            },
+            Self::Fp16 => PinnedFile {
+                file: "onnx/model_fp16.onnx",
+                sha256: "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a",
+                bytes: 163_234_740,
+            },
+            Self::Quantized => PinnedFile {
+                file: "onnx/model_quantized.onnx",
+                sha256: "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478",
+                bytes: 92_361_116,
+            },
         }
     }
 }
 
-/// Whisper models loqui knows by name: the GGML file for each and its
-/// SHA-256, from the repository's LFS records at the pinned revision.
-pub const WHISPER_MODELS: &[(&str, &str, &str)] = &[
-    ("large-v3-turbo", "ggml-large-v3-turbo.bin", "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"),
-    ("large-v3", "ggml-large-v3.bin", "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"),
-    ("medium", "ggml-medium.bin", "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"),
-    ("medium.en", "ggml-medium.en.bin", "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356"),
-    ("small", "ggml-small.bin", "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"),
-    ("small.en", "ggml-small.en.bin", "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d"),
-    ("base", "ggml-base.bin", "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
-    ("base.en", "ggml-base.en.bin", "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"),
-    ("tiny", "ggml-tiny.bin", "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
-    ("tiny.en", "ggml-tiny.en.bin", "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f"),
+/// A model file at a pinned revision.
+pub(crate) struct PinnedFile {
+    pub file: &'static str,
+    pub sha256: &'static str,
+    pub bytes: u64,
+}
+
+/// Every English voice pack is this size at the pinned revision. Packs are
+/// not hash-checked: each is a small tensor the voice blender reads, not code
+/// or a model graph.
+pub(crate) const VOICE_PACK_BYTES: u64 = 522_240;
+
+/// A Whisper model loqui knows by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WhisperModel {
+    /// What [`SttConfig::model`](crate::SttConfig) takes, e.g. `"base.en"`.
+    pub name: &'static str,
+    /// The GGML file in the pinned repository.
+    pub file: &'static str,
+    pub sha256: &'static str,
+    pub bytes: u64,
+}
+
+impl WhisperModel {
+    /// Whether the model transcribes languages other than English: the
+    /// `.en` models are English-only.
+    pub fn is_multilingual(&self) -> bool {
+        !self.name.ends_with(".en")
+    }
+
+    #[cfg(feature = "whisper")]
+    pub(crate) fn pinned(&self) -> PinnedFile {
+        PinnedFile { file: self.file, sha256: self.sha256, bytes: self.bytes }
+    }
+}
+
+const fn whisper(name: &'static str, file: &'static str, sha256: &'static str, bytes: u64) -> WhisperModel {
+    WhisperModel { name, file, sha256, bytes }
+}
+
+/// Whisper models loqui knows by name, with each GGML file's SHA-256 and size
+/// from the repository's LFS records at the pinned revision.
+pub const WHISPER_MODELS: &[WhisperModel] = &[
+    whisper("large-v3-turbo", "ggml-large-v3-turbo.bin", "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69", 1_624_555_275),
+    whisper("large-v3", "ggml-large-v3.bin", "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2", 3_095_033_483),
+    whisper("medium", "ggml-medium.bin", "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208", 1_533_763_059),
+    whisper("medium.en", "ggml-medium.en.bin", "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356", 1_533_774_781),
+    whisper("small", "ggml-small.bin", "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b", 487_601_967),
+    whisper("small.en", "ggml-small.en.bin", "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d", 487_614_201),
+    whisper("base", "ggml-base.bin", "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe", 147_951_465),
+    whisper("base.en", "ggml-base.en.bin", "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002", 147_964_211),
+    whisper("tiny", "ggml-tiny.bin", "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21", 77_691_713),
+    whisper("tiny.en", "ggml-tiny.en.bin", "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f", 77_704_715),
 ];
 
+/// The Whisper model named `name`, if loqui knows it.
+pub fn whisper_model(name: &str) -> Option<&'static WhisperModel> {
+    WHISPER_MODELS.iter().find(|m| m.name == name)
+}
+
 #[cfg(feature = "whisper")]
-pub(crate) fn whisper_file(model: &str) -> Result<(&'static str, &'static str), Error> {
-    WHISPER_MODELS
-        .iter()
-        .find(|(id, ..)| *id == model)
-        .map(|&(_, file, sha)| (file, sha))
-        .ok_or_else(|| Error::Config(format!("unknown Whisper model {model:?}")))
+pub(crate) fn whisper_file(model: &str) -> Result<&'static WhisperModel, Error> {
+    whisper_model(model).ok_or_else(|| Error::Config(format!("unknown Whisper model {model:?}")))
 }
 
 /// The default cache: `$XDG_CACHE_HOME/loqui`, else `~/.cache/loqui`.
@@ -106,13 +166,25 @@ pub(crate) fn private_dir(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Where `file` is in the cache, if it is there. Reads only: no directory
+/// is created and nothing is hashed.
+pub(crate) fn cached(cache: &Path, pinned: &Pinned, file: &str) -> Option<PathBuf> {
+    Cache::new(cache.to_path_buf()).repo(pinned.hf_repo()).get(file)
+}
+
+/// Where `file` will be once fetched: hf-hub's snapshot for the pinned
+/// revision, which is a commit hash and so names its own snapshot.
+pub(crate) fn expected_path(cache: &Path, pinned: &Pinned, file: &str) -> PathBuf {
+    cache.join(pinned.hf_repo().folder_name()).join("snapshots").join(pinned.revision).join(file)
+}
+
 /// Returns the local path of `file` from a pinned repository, fetching it
 /// if allowed, and checks its digest when one is pinned.
 pub(crate) fn fetch(cache: &Path, pinned: &Pinned, file: &str, sha256: Option<&str>, downloads: Downloads) -> Result<PathBuf, Error> {
     private_dir(cache)?;
-    let repo = Repo::with_revision(pinned.repo.to_owned(), RepoType::Model, pinned.revision.to_owned());
+    let repo = pinned.hf_repo();
     let hf_cache = Cache::new(cache.to_path_buf());
-    let path = match hf_cache.repo(repo.clone()).get(file) {
+    let path = match cached(cache, pinned, file) {
         Some(path) => path,
         None if downloads == Downloads::Deny => {
             return Err(Error::Missing(format!("{}@{} {file} is not in the cache and downloads are off", pinned.repo, pinned.revision)));
@@ -151,8 +223,26 @@ mod tests {
     #[cfg(feature = "whisper")]
     #[test]
     fn whisper_models_resolve_by_name() {
-        assert_eq!(whisper_file("large-v3-turbo").unwrap().0, "ggml-large-v3-turbo.bin");
+        assert_eq!(whisper_file("large-v3-turbo").unwrap().file, "ggml-large-v3-turbo.bin");
         assert!(whisper_file("gpt-4o-transcribe").is_err());
+    }
+
+    #[test]
+    fn english_only_models_are_the_dot_en_ones() {
+        let english_only: Vec<_> = WHISPER_MODELS.iter().filter(|m| !m.is_multilingual()).map(|m| m.name).collect();
+        assert_eq!(english_only, ["medium.en", "small.en", "base.en", "tiny.en"]);
+    }
+
+    #[test]
+    fn a_missing_file_is_looked_up_without_creating_the_cache() {
+        let cache = std::env::temp_dir().join(format!("loqui-cached-{}", std::process::id()));
+        assert!(cached(&cache, &KOKORO_REPO, "voices/af_heart.bin").is_none());
+        assert!(!cache.exists(), "a lookup must not create the cache");
+        let expected = expected_path(&cache, &KOKORO_REPO, "voices/af_heart.bin");
+        assert_eq!(
+            expected,
+            cache.join("models--onnx-community--Kokoro-82M-v1.0-ONNX/snapshots").join(KOKORO_REPO.revision).join("voices/af_heart.bin")
+        );
     }
 
     #[test]

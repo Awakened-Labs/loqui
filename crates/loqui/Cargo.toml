@@ -46,3 +46,8 @@ mp3 = ["loqui-audio/mp3"]
 # GPU inference: Kokoro through ONNX Runtime's CUDA provider, Whisper through
 # whisper.cpp's CUDA backend (needs the CUDA toolkit at build time).
 cuda = ["loqui-kokoro/cuda", "loqui-whisper?/cuda"]
+# CUDA for Whisper only, leaving Kokoro on the CPU and ONNX Runtime's CPU
+# build.
+whisper-cuda = ["whisper", "loqui-whisper/cuda"]
+# See loqui-audio's `unguarded-opus`: only for builds that patch opus-rs.
+unguarded-opus = ["loqui-audio/unguarded-opus"]

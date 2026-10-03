@@ -28,15 +28,16 @@
 mod models;
 mod slot;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-pub use loqui_audio::Format;
+// The error types `Error` wraps, so callers can match on the cause.
+pub use loqui_audio::{Error as AudioError, Format};
 pub use loqui_g2p::OovFallback;
-pub use loqui_kokoro::Blend;
-pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, default_cache_dir};
+pub use loqui_kokoro::{Blend, Error as TtsError};
+pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, WhisperModel, default_cache_dir, whisper_model};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
 use slot::Slot;
@@ -89,6 +90,17 @@ impl Error {
                 )
             )
             || matches!(self, Self::Tts(loqui_kokoro::Error::Voice(_) | loqui_kokoro::Error::Speed(_)))
+            || self.is_unsupported_language()
+    }
+
+    #[cfg(feature = "whisper")]
+    fn is_unsupported_language(&self) -> bool {
+        matches!(self, Self::Stt(loqui_whisper::Error::Language(_)))
+    }
+
+    #[cfg(not(feature = "whisper"))]
+    fn is_unsupported_language(&self) -> bool {
+        false
     }
 }
 
@@ -213,6 +225,7 @@ impl EngineBuilder {
             }
         };
         let downloads = self.downloads;
+        let tts_variant = self.tts.as_ref().map(|cfg| cfg.variant);
 
         let tts = self.tts.map(|cfg| {
             let cache = cache.clone();
@@ -238,6 +251,7 @@ impl EngineBuilder {
             cache,
             downloads,
             tts,
+            tts_variant,
             #[cfg(feature = "whisper")]
             stt,
             stt_model,
@@ -260,6 +274,7 @@ struct Inner {
     cache: PathBuf,
     downloads: Downloads,
     tts: Option<Slot<Kokoro>>,
+    tts_variant: Option<KokoroVariant>,
     #[cfg(feature = "whisper")]
     stt: Option<Slot<loqui_whisper::Whisper>>,
     stt_model: Option<String>,
@@ -401,8 +416,8 @@ fn start_reaper(inner: Weak<Inner>) {
 }
 
 fn load_kokoro(cache: &std::path::Path, cfg: &TtsConfig, downloads: Downloads) -> Result<Kokoro, Error> {
-    let (file, sha) = cfg.variant.file();
-    let onnx = models::fetch(cache, &models::KOKORO_REPO, file, Some(sha), downloads)?;
+    let pinned = cfg.variant.file();
+    let onnx = models::fetch(cache, &models::KOKORO_REPO, pinned.file, Some(pinned.sha256), downloads)?;
     // Fetching the default voice also tells us where voices live.
     let default_voice = models::fetch(cache, &models::KOKORO_REPO, &voice_file(loqui_kokoro::DEFAULT_VOICE), None, downloads)?;
     let voices_dir = default_voice.parent().map(PathBuf::from).ok_or_else(|| Error::Io("voice path has no parent".into()))?;
@@ -413,8 +428,8 @@ fn load_kokoro(cache: &std::path::Path, cfg: &TtsConfig, downloads: Downloads) -
 
 #[cfg(feature = "whisper")]
 fn load_whisper(cache: &std::path::Path, cfg: &SttConfig, downloads: Downloads) -> Result<loqui_whisper::Whisper, Error> {
-    let (file, sha) = models::whisper_file(&cfg.model)?;
-    let path = models::fetch(cache, &models::WHISPER_REPO, file, Some(sha), downloads)?;
+    let model = models::whisper_file(&cfg.model)?;
+    let path = models::fetch(cache, &models::WHISPER_REPO, model.file, Some(model.sha256), downloads)?;
     let whisper = loqui_whisper::Whisper::load(&path, cfg.device)?;
     tracing::info!(model = cfg.model, device = ?cfg.device, "Whisper loaded");
     Ok(whisper)
@@ -451,7 +466,7 @@ pub struct Speech {
 }
 
 #[cfg(feature = "whisper")]
-pub use loqui_whisper::{Device as SttDevice, Segment, Task, Transcription};
+pub use loqui_whisper::{Device as SttDevice, Error as SttError, Segment, Task, Transcription};
 
 /// A speech-to-text request.
 #[cfg(feature = "whisper")]
@@ -463,6 +478,8 @@ pub struct TranscribeRequest {
     pub prompt: Option<String>,
     pub task: Task,
     pub temperature: f32,
+    /// CPU threads for whisper.cpp; `None` lets it choose.
+    pub threads: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -476,6 +493,31 @@ pub struct ModelInfo {
     pub id: String,
     pub kind: ModelKind,
     pub loaded: bool,
+}
+
+/// A weights file an engine needs, as [`Engine::missing`] reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ModelFile {
+    /// The model that needs it.
+    pub kind: ModelKind,
+    /// The Hugging Face repository it comes from.
+    pub repo: &'static str,
+    /// Its path in that repository, such as `voices/af_heart.bin`.
+    pub file: String,
+    /// Where it will be in the cache once fetched.
+    pub path: PathBuf,
+    /// Its size: what fetching it will download.
+    pub bytes: u64,
+}
+
+/// A file the engine's configuration needs, and how to check it.
+struct Required {
+    kind: ModelKind,
+    pinned: &'static models::Pinned,
+    file: String,
+    sha256: Option<&'static str>,
+    bytes: u64,
 }
 
 /// Kokoro and Whisper, in process. Cheap to clone; clones share models.
@@ -559,6 +601,73 @@ impl Engine {
         Ok(builtin.chain(self.inner.names.iter().map(|(name, voice)| VoiceInfo::named(name, voice))).collect())
     }
 
+    /// The files this engine needs that are not in its cache: each enabled
+    /// model, the default voice, and the voices named voices are made of.
+    ///
+    /// It only looks. Nothing is loaded, hashed or downloaded, and the cache
+    /// directory is not created, so it is cheap enough for a health check.
+    /// An empty list means an engine running with [`Downloads::Deny`] has
+    /// every file it needs; digests are still checked when a model loads.
+    pub fn missing(&self) -> Vec<ModelFile> {
+        self.required()
+            .into_iter()
+            .filter(|r| models::cached(&self.inner.cache, r.pinned, &r.file).is_none())
+            .map(|r| ModelFile {
+                kind: r.kind,
+                repo: r.pinned.repo,
+                path: models::expected_path(&self.inner.cache, r.pinned, &r.file),
+                file: r.file,
+                bytes: r.bytes,
+            })
+            .collect()
+    }
+
+    /// Fetches and verifies the files [`Engine::missing`] would list,
+    /// without loading any model. Run it where downloads are allowed to fill
+    /// a cache for [`Downloads::Deny`]; with downloads off, it checks that
+    /// the cache is complete and its weights intact. For every other voice
+    /// pack too, add [`Engine::fetch_voices`].
+    pub fn fetch(&self) -> Result<(), Error> {
+        self.required()
+            .iter()
+            .try_for_each(|r| models::fetch(&self.inner.cache, r.pinned, &r.file, r.sha256, self.inner.downloads).map(drop))
+    }
+
+    fn required(&self) -> Vec<Required> {
+        let mut out = Vec::new();
+        if let Some(variant) = self.inner.tts_variant {
+            let model = variant.file();
+            out.push(Required {
+                kind: ModelKind::Tts,
+                pinned: &models::KOKORO_REPO,
+                file: model.file.to_owned(),
+                sha256: Some(model.sha256),
+                bytes: model.bytes,
+            });
+            let named = self.inner.names.values().flat_map(|named| named.blend.audible().map(|(id, _)| id.to_owned()));
+            let voices: BTreeSet<String> = std::iter::once(loqui_kokoro::DEFAULT_VOICE.to_owned()).chain(named).collect();
+            out.extend(voices.into_iter().map(|id| Required {
+                kind: ModelKind::Tts,
+                pinned: &models::KOKORO_REPO,
+                file: voice_file(&id),
+                sha256: None,
+                bytes: models::VOICE_PACK_BYTES,
+            }));
+        }
+        #[cfg(feature = "whisper")]
+        if let Some(model) = self.inner.stt_model.as_deref().and_then(whisper_model) {
+            let pinned = model.pinned();
+            out.push(Required {
+                kind: ModelKind::Stt,
+                pinned: &models::WHISPER_REPO,
+                file: pinned.file.to_owned(),
+                sha256: Some(pinned.sha256),
+                bytes: pinned.bytes,
+            });
+        }
+        out
+    }
+
     /// Downloads every voice pack on the roster now (about 15 MB), so any
     /// voice or blend can be spoken on a host that later runs with
     /// [`Downloads::Deny`].
@@ -616,7 +725,7 @@ impl Engine {
             prompt: request.prompt.clone(),
             task: request.task,
             temperature: request.temperature,
-            threads: None,
+            threads: request.threads,
         };
         Ok(whisper.transcribe(&pcm.samples, &options)?)
     }
@@ -695,6 +804,84 @@ mod tests {
         // Sorted by name; a weightless lead sets the accent but not the gender.
         assert_eq!(named, [("duo", "en-us", "unknown"), ("lady", "en-gb", "female"), ("will", "en-us", "male")]);
         assert_eq!(voices.last().unwrap().blend.as_deref(), Some("am_puck(1)+am_liam(1)"));
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("loqui-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// Lays `files` out in `cache` the way hf-hub's cache stores a pinned
+    /// revision: a ref naming the commit, and the files under its snapshot.
+    fn populate(cache: &std::path::Path, pinned: &models::Pinned, files: &[&str]) {
+        let repo = cache.join(format!("models--{}", pinned.repo.replace('/', "--")));
+        std::fs::create_dir_all(repo.join("refs")).unwrap();
+        std::fs::write(repo.join("refs").join(pinned.revision), pinned.revision).unwrap();
+        for file in files {
+            let path = repo.join("snapshots").join(pinned.revision).join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"weights").unwrap();
+        }
+    }
+
+    #[test]
+    fn missing_lists_what_the_configuration_needs_without_touching_the_cache() {
+        let cache = scratch("missing");
+        let engine = Engine::builder().cache_dir(&cache).voice("will", "am_puck(1)+am_liam(1)+af_heart(0)").build().unwrap();
+        let missing = engine.missing();
+        let files: Vec<_> = missing.iter().map(|f| (f.kind, f.file.as_str(), f.bytes)).collect();
+        assert_eq!(
+            files,
+            [
+                (ModelKind::Tts, "onnx/model.onnx", 325_532_232),
+                (ModelKind::Tts, "voices/af_heart.bin", models::VOICE_PACK_BYTES),
+                (ModelKind::Tts, "voices/am_liam.bin", models::VOICE_PACK_BYTES),
+                (ModelKind::Tts, "voices/am_puck.bin", models::VOICE_PACK_BYTES),
+            ],
+            "the model, the default voice, and the audible parts of named voices, once each"
+        );
+        assert!(missing.iter().all(|f| f.repo == models::KOKORO_REPO.repo && f.path.starts_with(&cache) && f.path.ends_with(&f.file)));
+        assert!(!cache.exists(), "missing() must not create the cache");
+    }
+
+    #[test]
+    fn cached_files_are_not_missing() {
+        let cache = scratch("cached");
+        populate(&cache, &models::KOKORO_REPO, &["onnx/model_quantized.onnx", "voices/af_heart.bin"]);
+        let tts = TtsConfig { variant: KokoroVariant::Quantized, ..TtsConfig::default() };
+        let engine = Engine::builder().cache_dir(&cache).tts(Some(tts)).build().unwrap();
+        assert_eq!(engine.missing(), []);
+        let with_named = Engine::builder().cache_dir(&cache).voice("sky", "af_sky").build().unwrap();
+        let files: Vec<_> = with_named.missing().into_iter().map(|f| f.file).collect();
+        assert_eq!(files, ["onnx/model.onnx", "voices/af_sky.bin"], "only what is absent");
+        std::fs::remove_dir_all(&cache).unwrap();
+    }
+
+    #[test]
+    fn fetch_with_downloads_off_reports_what_is_missing() {
+        let cache = scratch("fetch-deny");
+        let engine = Engine::builder().cache_dir(&cache).downloads(Downloads::Deny).build().unwrap();
+        assert!(matches!(engine.fetch(), Err(Error::Missing(_))));
+        assert!(Engine::builder().cache_dir(&cache).tts(None).build().unwrap().fetch().is_ok(), "an engine with no models needs nothing");
+        std::fs::remove_dir_all(&cache).unwrap();
+    }
+
+    #[cfg(feature = "whisper")]
+    #[test]
+    fn missing_includes_the_whisper_model() {
+        let cache = scratch("missing-stt");
+        let stt = SttConfig { model: "tiny.en".into(), ..SttConfig::default() };
+        let engine = Engine::builder().cache_dir(&cache).tts(None).stt(Some(stt)).build().unwrap();
+        let files: Vec<_> = engine.missing().into_iter().map(|f| (f.kind, f.repo, f.file, f.bytes)).collect();
+        assert_eq!(files, [(ModelKind::Stt, models::WHISPER_REPO.repo, "ggml-tiny.en.bin".to_owned(), 77_704_715)]);
+    }
+
+    #[cfg(feature = "whisper")]
+    #[test]
+    fn an_unsupported_language_is_the_callers_error() {
+        assert!(Error::Stt(loqui_whisper::Error::Language("fr".into())).is_client_error());
+        assert!(!Error::Stt(loqui_whisper::Error::Inference("boom".into())).is_client_error());
     }
 
     #[test]

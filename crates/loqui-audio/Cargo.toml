@@ -45,3 +45,7 @@ default = []
 # MP3 output through LAME. Off by default: it is the one LGPL component, and
 # a program that links loqui in process takes on LAME's relinking terms.
 mp3 = ["dep:mp3lame-encoder"]
+# Skips the refusal to run Opus on CPUs with AVX but no FMA. Only for builds
+# that patch opus-rs with restsend/opus-rs#31 (for example through
+# `[patch.crates-io]`); without that fix, Opus crashes those CPUs.
+unguarded-opus = []

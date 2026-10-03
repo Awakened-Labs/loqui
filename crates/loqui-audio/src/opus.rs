@@ -133,12 +133,15 @@ const UNSUPPORTED_CPU: &str = "Opus is unavailable on this CPU: it has AVX witho
 /// AVX and no FMA (Sandy/Ivy Bridge, Bulldozer, some VMs) dies of SIGILL
 /// mid-codec. Refusing Opus there turns a crash into an error. Remove once
 /// an opus-rs release gates on FMA (restsend/opus-rs#31).
+///
+/// The `unguarded-opus` feature skips the check, for builds that patch
+/// opus-rs with that fix themselves.
 fn cpu_supported() -> bool {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "unguarded-opus")))]
     {
         !std::arch::is_x86_feature_detected!("avx") || std::arch::is_x86_feature_detected!("fma")
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(any(not(target_arch = "x86_64"), feature = "unguarded-opus"))]
     {
         true
     }

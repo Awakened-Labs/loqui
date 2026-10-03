@@ -31,10 +31,13 @@ about what your callers can make it do.
 **Downloads.** By default, missing weights are fetched from Hugging Face,
 pinned to a commit revision. The Kokoro and Whisper weights are also checked
 against a SHA-256 digest. A service that should never reach the network
-should use `Downloads::Deny` and fill the cache ahead of time with
-`loqui fetch`, or by running once where downloads are allowed. Shipping a
-read-only cache, such as a container layer or a mounted volume, works: a
-cache directory that is already private is left as it is.
+should use `Downloads::Deny` and fill the cache ahead of time: with
+`loqui fetch`, or by calling `Engine::fetch()` (and `fetch_voices()` for
+every voice) where downloads are allowed. `fetch()` verifies each digest but
+loads nothing. `Engine::missing()` lists what is still absent, with sizes,
+without loading, hashing or downloading anything, so a health check can call
+it. Shipping a read-only cache, such as a container layer or a mounted
+volume, works: a cache directory that is already private is left as it is.
 
 **The cache directory** (`$XDG_CACHE_HOME/loqui` by default, or
 `cache_dir(..)`) is created mode 0700. The weights are not secret, but
@@ -55,6 +58,12 @@ server does:
 - Uploaded audio is parsed by pure-Rust decoders (symphonia and opus-rs).
   Treat a decoder bug as a possible denial of service, and keep the caps.
 
+**Older CPUs.** Opus is refused, in both directions, on CPUs with AVX but no
+FMA (Sandy and Ivy Bridge, some VMs), because opus-rs crashes there. A
+program that patches opus-rs with restsend/opus-rs#31, through
+`[patch.crates-io]`, can enable `unguarded-opus` to lift the refusal.
+Without the patch, that feature turns the error back into a crash.
+
 **Named voices.** `EngineBuilder::voice("will", "am_puck(1)+am_liam(1)")`
 names a blend of built-in voices; afterwards `"will"` works anywhere a
 voice does, inside other blends too. `build()` checks every name and spec
@@ -71,7 +80,8 @@ milliseconds to several seconds, so in async code run it under
 `tokio::task::spawn_blocking` (or your runtime's equivalent), never on the
 executor. Each model runs one inference at a time. If your callers can
 queue work, bound that queue: the server allows 8 waiting requests per model,
-then answers 503.
+then answers 503. `TtsConfig::threads` and `TranscribeRequest::threads` cap the
+CPU threads each model uses; by default the runtimes choose.
 
 **Memory.** Kokoro is about 330 MB and stays resident unless you give
 `TtsConfig::idle_ttl`. Whisper large-v3-turbo is about 1.6 GB, and by
@@ -82,7 +92,8 @@ at `build()`, so the first request does not pay for it.
 **GPUs.** The `cuda` feature runs Kokoro through ONNX Runtime's CUDA
 provider and Whisper through whisper.cpp's CUDA backend. It needs CUDA 13
 and the toolkit at build time. Select the device in `TtsConfig::device` and
-`SttConfig::device`.
+`SttConfig::device`. `whisper-cuda` puts only Whisper on the GPU, leaving
+Kokoro on ONNX Runtime's CPU build.
 
 ## Licensing for embedders
 
