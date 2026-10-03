@@ -3,7 +3,9 @@
 //! The first request loads the model while holding the slot's lock, so
 //! concurrent first requests wait for one load instead of starting several.
 //! A failed load is remembered for a few seconds so a burst of requests
-//! does not become a burst of multi-second load attempts. A model idle past
+//! does not become a burst of multi-second load attempts; weights missing
+//! from the cache are replayed as missing, so callers can still tell "fetch
+//! the weights" from "the model is broken". A model idle past
 //! its TTL is dropped, freeing its memory (and VRAM), but never while a
 //! request still holds it.
 
@@ -26,7 +28,29 @@ pub(crate) struct Slot<T> {
 struct State<T> {
     model: Option<Arc<T>>,
     last_used: Instant,
-    failed: Option<(Instant, String)>,
+    failed: Option<(Instant, Failure)>,
+}
+
+/// A load failure, kept to be replayed during the backoff.
+enum Failure {
+    Missing(String),
+    Other(String),
+}
+
+impl Failure {
+    fn of(error: &Error) -> Self {
+        match error {
+            Error::Missing(what) => Self::Missing(what.clone()),
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    fn replay(&self) -> Error {
+        match self {
+            Self::Missing(what) => Error::Missing(what.clone()),
+            Self::Other(why) => Error::Unavailable(why.clone()),
+        }
+    }
 }
 
 impl<T> Slot<T> {
@@ -47,10 +71,10 @@ impl<T> Slot<T> {
         if let Some(model) = &state.model {
             return Ok(Arc::clone(model));
         }
-        if let Some((when, why)) = &state.failed
+        if let Some((when, failure)) = &state.failed
             && when.elapsed() < FAILURE_BACKOFF
         {
-            return Err(Error::Unavailable(why.clone()));
+            return Err(failure.replay());
         }
         match (self.load)() {
             Ok(model) => {
@@ -61,7 +85,7 @@ impl<T> Slot<T> {
                 Ok(model)
             }
             Err(e) => {
-                state.failed = Some((Instant::now(), e.to_string()));
+                state.failed = Some((Instant::now(), Failure::of(&e)));
                 Err(e)
             }
         }
@@ -143,6 +167,19 @@ mod tests {
         assert!(slot.get().is_err());
         assert!(slot.get().is_err());
         assert_eq!(loads.load(Ordering::SeqCst), 1, "the second call replays the failure");
+    }
+
+    #[test]
+    fn missing_weights_are_replayed_as_missing() {
+        let slot: Slot<u32> = Slot::new(None, Box::new(|| Err(Error::Missing("voices/af_heart.bin".into()))));
+        assert!(matches!(slot.get(), Err(Error::Missing(_))));
+        match slot.get() {
+            Err(Error::Missing(what)) => assert_eq!(what, "voices/af_heart.bin"),
+            other => panic!("expected the replayed failure to stay Missing, got {other:?}"),
+        }
+        let (_, broken) = counting(true);
+        assert!(broken.get().is_err());
+        assert!(matches!(broken.get(), Err(Error::Unavailable(_))), "other failures replay as Unavailable");
     }
 
     #[test]

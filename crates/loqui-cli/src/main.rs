@@ -231,6 +231,7 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
             model: args.stt_model.clone(),
             device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
             idle_ttl: (args.stt_idle_secs > 0).then(|| std::time::Duration::from_secs(args.stt_idle_secs)),
+            ..loqui::SttConfig::default()
         }));
     }
     #[cfg(not(feature = "whisper"))]
@@ -346,15 +347,25 @@ fn doctor(args: &ServeArgs) -> Result<(), String> {
     }
     let cache = args.engine.cache_dir.clone().or_else(loqui::default_cache_dir);
     say(cache.is_some(), format!("model cache: {}", cache.map_or("none".into(), |c| c.display().to_string())));
-    if let Some(path) = args.engine.voices.path() {
-        // A bad file stops `serve`, so say so here.
-        match build_engine(&EngineArgs { preload: false, ..args.engine.clone() }, false, 4096, 0) {
-            Ok(engine) => {
+    // The engine `serve` would build: a configuration it would refuse, such
+    // as a bad voices file, stops it, so say so here.
+    match build_engine(&EngineArgs { preload: false, ..args.engine.clone() }, true, 4096, 0) {
+        Ok(engine) => {
+            if let Some(path) = args.engine.voices.path() {
                 let named = engine.voices().map_or(0, |v| v.iter().filter(|v| v.blend.is_some()).count());
                 say(true, format!("{named} named voice(s) from {}", path.display()));
             }
-            Err(e) => say(false, format!("serve would refuse to start: {e}")),
+            let missing = engine.missing();
+            let megabytes = missing.iter().map(|f| f.bytes).sum::<u64>().div_ceil(1_000_000);
+            match (missing.len(), args.engine.offline) {
+                (0, _) => say(true, "every model file is cached".into()),
+                (n, true) => {
+                    say(false, format!("{n} model file(s) ({megabytes} MB) are not cached and --offline is set: run `loqui fetch`"))
+                }
+                (n, false) => say(true, format!("{n} model file(s) ({megabytes} MB) download on first use, or now with `loqui fetch`")),
+            }
         }
+        Err(e) => say(false, format!("serve would refuse to start: {e}")),
     }
     if problems == 0 { Ok(()) } else { Err(format!("{problems} warning(s)")) }
 }
@@ -416,8 +427,10 @@ fn voices(file: VoicesFile) -> Result<(), String> {
 }
 
 fn fetch(args: EngineArgs) -> Result<(), String> {
+    // Fetching verifies every digest but loads nothing, so preparing a cache
+    // never holds a model in memory.
     let engine = build_engine(&EngineArgs { preload: false, ..args }, true, 4096, 0)?;
-    engine.preload().map_err(|e| e.to_string())?;
+    engine.fetch().map_err(|e| e.to_string())?;
     for m in engine.models() {
         eprintln!("{} ready", m.id);
     }

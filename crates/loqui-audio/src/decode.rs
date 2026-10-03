@@ -101,7 +101,7 @@ pub fn decode(bytes: &[u8], max_secs: Option<u64>) -> Result<Pcm, Error> {
         let scale = 1.0 / channels as f32;
         mono.extend(samples.chunks_exact(channels).map(|frame| frame.iter().sum::<f32>() * scale));
         if let Some(max) = max_secs
-            && mono.len() as u64 > max * u64::from(packet_rate)
+            && mono.len() as u64 > max.saturating_mul(u64::from(packet_rate))
         {
             return Err(Error::TooLong { max_secs: max });
         }
@@ -164,6 +164,7 @@ mod tests {
         let pcm = Pcm { samples: vec![0.1; 16_000 * 3], rate: 16_000 };
         let wav = encode(&pcm, Format::Wav).unwrap();
         assert!(matches!(decode(&wav, Some(2)), Err(Error::TooLong { max_secs: 2 })));
+        assert!(decode(&wav, Some(u64::MAX)).is_ok(), "a ceiling too large to scale must not overflow");
         assert!(decode(&wav, Some(3)).is_ok());
     }
 
