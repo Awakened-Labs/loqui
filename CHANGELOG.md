@@ -5,7 +5,7 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-03
 
 Custom voices: blends can be given names, and the blends themselves are
 hardened. An embedding application can also check and prepare an engine's
