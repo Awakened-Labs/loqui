@@ -1109,6 +1109,7 @@ dependencies = [
  "loqui-audio",
  "loqui-g2p",
  "loqui-kokoro",
+ "loqui-speaker",
  "loqui-whisper",
  "sha2",
  "thiserror",

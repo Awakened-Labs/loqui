@@ -86,14 +86,17 @@ fn model_entries(engine: &loqui::Engine) -> Vec<serde_json::Value> {
     engine
         .models()
         .into_iter()
-        .map(|m| {
+        .filter_map(|m| {
             // `owned_by` ends in the task and `task` states it, which is how
-            // OpenAI-style clients that route by model classify ids.
+            // OpenAI-style clients that route by model classify ids. Only the
+            // two models the API serves are listed: a speaker model has no
+            // route here.
             let task = match m.kind {
                 loqui::ModelKind::Tts => "tts",
                 loqui::ModelKind::Stt => "stt",
+                _ => return None,
             };
-            serde_json::json!({ "id": m.id, "object": "model", "created": 0, "owned_by": format!("loqui/{task}"), "task": task })
+            Some(serde_json::json!({ "id": m.id, "object": "model", "created": 0, "owned_by": format!("loqui/{task}"), "task": task }))
         })
         .collect()
 }

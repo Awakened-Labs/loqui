@@ -27,6 +27,7 @@
 
 mod models;
 mod slot;
+mod speaker;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -38,12 +39,16 @@ pub use loqui_audio::{Error as AudioError, Format};
 pub use loqui_g2p::OovFallback;
 pub use loqui_kokoro::{Blend, Error as TtsError};
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, WhisperModel, default_cache_dir, whisper_model};
+pub use speaker::{MIN_EMBED_SECS, SpeakerEmbedding};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
 use slot::Slot;
 
 /// The id `/v1/models` lists for the Kokoro model.
 pub const TTS_MODEL_ID: &str = "kokoro";
+
+/// The id [`Engine::models`] lists for the speaker-embedding model.
+pub const SPEAKER_MODEL_ID: &str = "wespeaker-resnet34-lm";
 
 /// Non-exhaustive because `Stt` exists only with the `whisper` feature.
 #[derive(Debug, thiserror::Error)]
@@ -73,6 +78,11 @@ pub enum Error {
     Audio(#[from] loqui_audio::Error),
     #[error("speech synthesis: {0}")]
     Tts(#[from] loqui_kokoro::Error),
+    #[error("speaker embedding: {0}")]
+    Speaker(#[from] loqui_speaker::Error),
+    /// The caller stopped a long operation from its progress callback.
+    #[error("cancelled")]
+    Cancelled,
     #[cfg(feature = "whisper")]
     #[error("transcription: {0}")]
     Stt(#[from] loqui_whisper::Error),
@@ -82,7 +92,8 @@ impl Error {
     /// Whether the caller's input caused this, as opposed to the engine.
     /// Servers map this to 4xx rather than 5xx.
     pub fn is_client_error(&self) -> bool {
-        matches!(self, Self::Invalid(_) | Self::InputTooLong { .. } | Self::Disabled(_))
+        matches!(self, Self::Invalid(_) | Self::InputTooLong { .. } | Self::Disabled(_) | Self::Cancelled)
+            || matches!(self, Self::Speaker(loqui_speaker::Error::TooShort { .. }))
             || matches!(
                 self,
                 Self::Audio(
@@ -125,6 +136,17 @@ impl Default for TtsConfig {
     }
 }
 
+/// Speaker-embedding settings: [`Engine::speaker_embedding`] and
+/// [`Engine::match_voice`].
+#[derive(Debug, Clone, Default)]
+pub struct SpeakerConfig {
+    /// CPU threads for ONNX Runtime; `None` lets it choose.
+    pub threads: Option<usize>,
+    /// Unload after this long unused; `None` keeps the model (26 MB)
+    /// resident.
+    pub idle_ttl: Option<Duration>,
+}
+
 /// Speech-to-text settings.
 #[cfg(feature = "whisper")]
 #[derive(Debug, Clone)]
@@ -150,6 +172,7 @@ pub struct EngineBuilder {
     tts: Option<TtsConfig>,
     #[cfg(feature = "whisper")]
     stt: Option<SttConfig>,
+    speaker: Option<SpeakerConfig>,
     max_input_chars: usize,
     max_audio_secs: u64,
     preload: bool,
@@ -178,6 +201,14 @@ impl EngineBuilder {
     #[cfg(feature = "whisper")]
     pub fn stt(mut self, config: Option<SttConfig>) -> Self {
         self.stt = config;
+        self
+    }
+
+    /// Speaker-embedding settings; `None` (the default) disables
+    /// [`Engine::speaker_embedding`] and [`Engine::match_voice`], and keeps
+    /// their model out of [`Engine::missing`] and [`Engine::fetch`].
+    pub fn speaker(mut self, config: Option<SpeakerConfig>) -> Self {
+        self.speaker = config;
         self
     }
 
@@ -246,6 +277,11 @@ impl EngineBuilder {
             let ttl = cfg.idle_ttl;
             Slot::new(ttl, Box::new(move || load_whisper(&cache, &cfg, downloads)))
         });
+        let speaker = self.speaker.map(|cfg| {
+            let cache = cache.clone();
+            let ttl = cfg.idle_ttl;
+            Slot::new(ttl, Box::new(move || load_speaker(&cache, &cfg, downloads)))
+        });
 
         let inner = Arc::new(Inner {
             cache,
@@ -255,6 +291,7 @@ impl EngineBuilder {
             #[cfg(feature = "whisper")]
             stt,
             stt_model,
+            speaker,
             names,
             max_input_chars: self.max_input_chars,
             max_audio_secs: self.max_audio_secs,
@@ -278,10 +315,10 @@ struct Inner {
     #[cfg(feature = "whisper")]
     stt: Option<Slot<loqui_whisper::Whisper>>,
     stt_model: Option<String>,
+    speaker: Option<Slot<loqui_speaker::SpeakerEncoder>>,
     names: BTreeMap<String, Named>,
     max_input_chars: usize,
-    // Only transcription decodes uploads.
-    #[cfg_attr(not(feature = "whisper"), allow(dead_code))]
+    /// The longest upload decoded, for transcription and speaker embeddings.
     max_audio_secs: u64,
 }
 
@@ -292,7 +329,8 @@ impl Inner {
         let stt = self.stt.as_ref().is_some_and(|s| s.ttl().is_some());
         #[cfg(not(feature = "whisper"))]
         let stt = false;
-        tts || stt
+        let speaker = self.speaker.as_ref().is_some_and(|s| s.ttl().is_some());
+        tts || stt || speaker
     }
 
     fn reap(&self) {
@@ -306,6 +344,11 @@ impl Inner {
             && slot.reap()
         {
             tracing::info!(kind = "stt", "idle model unloaded");
+        }
+        if let Some(slot) = &self.speaker
+            && slot.reap()
+        {
+            tracing::info!(kind = "speaker", "idle model unloaded");
         }
     }
 }
@@ -426,6 +469,14 @@ fn load_kokoro(cache: &std::path::Path, cfg: &TtsConfig, downloads: Downloads) -
     Ok(Kokoro::new(model, voices_dir, cfg.fallback))
 }
 
+fn load_speaker(cache: &std::path::Path, cfg: &SpeakerConfig, downloads: Downloads) -> Result<loqui_speaker::SpeakerEncoder, Error> {
+    let pinned = &models::SPEAKER_FILE;
+    let path = models::fetch(cache, &models::SPEAKER_REPO, pinned.file, Some(pinned.sha256), downloads)?;
+    let encoder = loqui_speaker::SpeakerEncoder::load(&path, cfg.threads)?;
+    tracing::info!(model = SPEAKER_MODEL_ID, "speaker model loaded");
+    Ok(encoder)
+}
+
 #[cfg(feature = "whisper")]
 fn load_whisper(cache: &std::path::Path, cfg: &SttConfig, downloads: Downloads) -> Result<loqui_whisper::Whisper, Error> {
     let model = models::whisper_file(&cfg.model)?;
@@ -482,10 +533,15 @@ pub struct TranscribeRequest {
     pub threads: Option<u16>,
 }
 
+/// Which model a [`ModelInfo`] or [`ModelFile`] is about. Non-exhaustive:
+/// loqui may run more kinds of model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ModelKind {
     Tts,
     Stt,
+    /// The speaker-embedding model.
+    Speaker,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -540,6 +596,7 @@ impl Engine {
             tts: Some(TtsConfig::default()),
             #[cfg(feature = "whisper")]
             stt: None,
+            speaker: None,
             max_input_chars: 4096,
             max_audio_secs: 1800,
             preload: false,
@@ -561,6 +618,9 @@ impl Engine {
         if let Some(slot) = &self.inner.stt {
             slot.get()?;
         }
+        if let Some(slot) = &self.inner.speaker {
+            slot.get()?;
+        }
         Ok(())
     }
 
@@ -573,6 +633,9 @@ impl Engine {
         if let Some(slot) = &self.inner.stt {
             slot.unload();
         }
+        if let Some(slot) = &self.inner.speaker {
+            slot.unload();
+        }
     }
 
     pub fn models(&self) -> Vec<ModelInfo> {
@@ -583,6 +646,9 @@ impl Engine {
         #[cfg(feature = "whisper")]
         if let (Some(slot), Some(id)) = (&self.inner.stt, &self.inner.stt_model) {
             out.push(ModelInfo { id: id.clone(), kind: ModelKind::Stt, loaded: slot.is_loaded() });
+        }
+        if let Some(slot) = &self.inner.speaker {
+            out.push(ModelInfo { id: SPEAKER_MODEL_ID.into(), kind: ModelKind::Speaker, loaded: slot.is_loaded() });
         }
         out
     }
@@ -665,6 +731,16 @@ impl Engine {
                 bytes: pinned.bytes,
             });
         }
+        if self.inner.speaker.is_some() {
+            let pinned = &models::SPEAKER_FILE;
+            out.push(Required {
+                kind: ModelKind::Speaker,
+                pinned: &models::SPEAKER_REPO,
+                file: pinned.file.to_owned(),
+                sha256: Some(pinned.sha256),
+                bytes: pinned.bytes,
+            });
+        }
         out
     }
 
@@ -713,6 +789,19 @@ impl Engine {
         let duration_secs = pcm.duration_secs();
         let audio = loqui_audio::encode(&pcm, request.format)?;
         Ok(Speech { audio, format: request.format, duration_secs })
+    }
+
+    /// The speaker embedding of a recording: decoded, trimmed to its speech
+    /// (at least [`MIN_EMBED_SECS`] of it), and embedded from its first 30 s.
+    /// Needs [`EngineBuilder::speaker`].
+    ///
+    /// An embedding measures how alike voices sound. It is not evidence of
+    /// who is speaking: do not use it to authenticate anyone.
+    pub fn speaker_embedding(&self, audio: &[u8]) -> Result<SpeakerEmbedding, Error> {
+        let slot = self.inner.speaker.as_ref().ok_or(Error::Disabled("speaker embeddings"))?;
+        let pcm = loqui_audio::decode_mono_16k(audio, Some(self.inner.max_audio_secs))?;
+        let encoder = slot.get()?;
+        speaker::embed(&encoder, &pcm.samples, MIN_EMBED_SECS)
     }
 
     #[cfg(feature = "whisper")]
@@ -888,5 +977,56 @@ mod tests {
     fn voices_needs_text_to_speech() {
         let engine = Engine::builder().cache_dir(std::env::temp_dir()).tts(None).build().unwrap();
         assert!(matches!(engine.voices(), Err(Error::Disabled(_))));
+    }
+
+    /// Two seconds of a tone, as a WAV upload.
+    fn tone_wav() -> Vec<u8> {
+        let samples = (0..32_000).map(|i| 0.3 * (i as f32 * 0.05).sin()).collect();
+        loqui_audio::encode(&loqui_audio::Pcm { samples, rate: 16_000 }, Format::Wav).unwrap()
+    }
+
+    /// An engine that did not ask for speaker embeddings neither needs nor
+    /// fetches their model; one that did lists it, unloaded, and needs it.
+    #[test]
+    fn the_speaker_model_is_needed_only_when_enabled() {
+        let cache = scratch("missing-speaker");
+        let without = Engine::builder().cache_dir(&cache).tts(None).build().unwrap();
+        assert!(without.missing().is_empty());
+        assert!(without.models().is_empty());
+        let with = Engine::builder().cache_dir(&cache).tts(None).speaker(Some(SpeakerConfig::default())).build().unwrap();
+        let files: Vec<_> = with.missing().into_iter().map(|f| (f.kind, f.repo, f.file, f.bytes)).collect();
+        assert_eq!(
+            files,
+            [(ModelKind::Speaker, models::SPEAKER_REPO.repo, "wespeaker_en_voxceleb_resnet34_LM.onnx".to_owned(), 26_530_550)]
+        );
+        assert_eq!(with.models(), [ModelInfo { id: SPEAKER_MODEL_ID.into(), kind: ModelKind::Speaker, loaded: false }]);
+    }
+
+    #[test]
+    fn speaker_embeddings_need_the_speaker_model_enabled() {
+        let engine = Engine::builder().cache_dir(std::env::temp_dir()).tts(None).build().unwrap();
+        assert!(matches!(engine.speaker_embedding(&tone_wav()), Err(Error::Disabled("speaker embeddings"))));
+    }
+
+    /// With downloads off, absent weights are reported, not fetched.
+    #[test]
+    fn missing_speaker_weights_are_reported_with_downloads_off() {
+        let cache = scratch("speaker-deny");
+        let engine = Engine::builder()
+            .cache_dir(&cache)
+            .downloads(Downloads::Deny)
+            .tts(None)
+            .speaker(Some(SpeakerConfig::default()))
+            .build()
+            .unwrap();
+        assert!(matches!(engine.speaker_embedding(&tone_wav()), Err(Error::Missing(_))));
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn a_short_recording_and_a_cancelled_match_are_the_callers() {
+        assert!(Error::Speaker(loqui_speaker::Error::TooShort { secs: 0.2, min_secs: 0.5 }).is_client_error());
+        assert!(!Error::Speaker(loqui_speaker::Error::Model("boom".into())).is_client_error());
+        assert!(Error::Cancelled.is_client_error());
     }
 }
