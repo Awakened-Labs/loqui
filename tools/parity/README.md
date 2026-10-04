@@ -59,7 +59,86 @@ GPU inside the CUDA dev image (`docker/cuda.Dockerfile`, target `toolchain`):
         /models/.../ggml-large-v3-turbo.bin --gpu 0 --language en --dir /data/container-wavs --out /data/stt-loqui.txt
     python3 tools/parity/e2e.py wer corpus.txt stt-loqui.txt
 
+## Speaker similarity
+
+`speaker_spike.py` asks whether a speaker-verification model can steer a
+search over Kokoro blends, which is what matching a recording needs. It runs
+on the host in any Python with `numpy`, `onnxruntime`, `kaldi-native-fbank`,
+`scipy` and `soundfile`, speaks with Kokoro's ONNX export (packs mixed in
+numpy, as `kokoro_ref.py` does), and embeds with a model exported for
+sherpa-onnx: WeSpeaker's 80-dim Kaldi fbank at 16 kHz, `feats [B,T,80]` in and
+`embs [B,D]` out. Phonemes come from `phonemize`, one dialect per file:
+
+    head -7 tools/parity/corpus/harvard.txt > parity-out/spike/sentences.txt
+    phonemize < sentences.txt > phonemes-us.txt; phonemize --gb < sentences.txt > phonemes-gb.txt
+    speaker_spike.py synth  KOKORO.onnx VOICES_DIR config.json phonemes-us.txt phonemes-gb.txt audio
+    speaker_spike.py score  SPEAKER.onnx audio [TARGET.wav ...]
+    speaker_spike.py search SPEAKER.onnx KOKORO.onnx VOICES_DIR config.json phonemes-us.txt phonemes-gb.txt audio K BUDGET
+
+`config.json` is hexgrad/Kokoro-82M's (its `vocab`). The speaker models are
+from `csukuangfj/speaker-embedding-models` at revision
+`0743f301363dec56491a490f6d6cbc9d67f9a3bf`.
+
 ## Results log
+
+### 2026-10-04: speaker similarity over Kokoro voices
+
+28 stock voices x 5 Harvard sentences; 12 voice pairs (six within a gender
+and accent, two across accents, four across genders) as targets at 25, 50
+and 75% on sentences 3-4, and as a 0-100% grid in steps of 10 on the same
+text and on sentences 6-7. Kokoro fp32 (pinned revision), onnxruntime 1.30,
+CPU, one physical core.
+
+| | WeSpeaker ResNet34-LM | WeSpeaker CAM++-LM |
+|---|---|---|
+| File (sha256) | `wespeaker_en_voxceleb_resnet34_LM.onnx`, 26.5 MB (`e9848563…9c39012`) | `wespeaker_en_voxceleb_CAM++_LM.onnx`, 29.3 MB (`e197af7e…0ec10cb2`) |
+| Voice identification, leave one sentence out | 140/140 | 140/140 |
+| Margin, true voice over the best other (mean / min) | 0.358 / 0.062 | 0.342 / 0.124 |
+| 50/50 blend's nearest voice is a parent | 9/12 | 9/12 |
+| Cosine to each parent monotone in the weight | 11/12 | 11/12 |
+| Grid finds the weight within 15, same text | 36/36 (mean error 3.3) | 36/36 (3.3) |
+| Grid finds the weight within 15, other text | 35/36 (5.0) | 35/36 (6.7) |
+| Linear mix of the two voices' embeddings vs the blend's (mean / min cosine) | 0.802 / 0.333 | 0.818 / 0.309 |
+| Embedding cost | 8.6 ms per second of audio | 8.4 ms |
+
+The three misses on "nearest voice is a parent" are all across genders: a
+50/50 male and female blend sounds most like a third, androgynous voice
+(`af_alloy`, `am_eric`), and the parents rank as low as 20th. Within a gender
+the dominant parent always ranks 1st or 2nd and the other within the top 7.
+
+The search (rank by cosine to each voice, start from the least-squares mix of
+the top K on a 5% lattice, then move weight between pairs while it helps,
+20/10/5 points at a time), on the 50% and 75% targets, with candidates
+spoken on text the target never said. "Ceiling" is the true blend spoken on
+that text:
+
+| K, budget | Similarity found (mean) | Best single voice | Ceiling | Within 0.02 of the ceiling | Syntheses | Time per match |
+|---|---|---|---|---|---|---|
+| 4, 36 | 0.757 | 0.616 | 0.761 | 17/24 | 28.8 | 68 s |
+| 6, 48 | 0.766 | 0.616 | 0.761 | 18/24 | 45.2 | 101 s |
+
+Within a gender the search matches or beats the ceiling, usually with the
+right parents and weights within 10 points. Across genders it falls short
+(worst: 0.625 against 0.722) where the parents never enter the top K. The
+time is dominated by Kokoro at a real-time factor of 0.35 on one core.
+
+Decision: ResNet34-LM, K = 4, a budget of 36. CAM++ is no better; K = 6 buys
+0.009 for half as much time again.
+
+The Rust matcher (`Engine::match_voice`, defaults), run by
+`cargo test -p loqui --no-default-features --test voice_match -- --ignored
+--test-threads 1` against the pinned models (Kokoro fp32, CPU, one core
+shared with another build; 458 s for all four, the 28 anchors included):
+
+| Target, on a sentence the search never speaks | Found | Similarity | Best single voice | Syntheses |
+|---|---|---|---|---|
+| `bm_george` | `bm_george` | 0.907 | 0.907 | 16 |
+| `af_bella(70)+af_sky(30)` | `af_bella(65)+af_sky(25)+af_nova(10)` | 0.878 | 0.821 (`af_bella`) | 30 |
+
+`the_same_voice_scores_above_other_voices` and `matching_is_deterministic`
+(12 syntheses, the same blend and similarity twice) pass as well. The Rust
+encoder agrees with Python onnxruntime on the same model at cosine > 0.9999
+(`loqui-speaker`'s ignored `the_embedding_matches_onnxruntime_in_python`).
 
 ### 2026-10-02: voice blends
 

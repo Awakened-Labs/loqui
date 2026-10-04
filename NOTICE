@@ -45,11 +45,25 @@ Third-party material embedded in, or downloaded by, this software:
   MIT License (OpenAI Whisper). Downloaded at runtime, pinned to a commit
   revision and SHA-256; not redistributed.
 
+  WeSpeaker ResNet34-LM speaker-embedding weights, trained on VoxCeleb —
+  https://github.com/wenet-e2e/wespeaker (pretrained models,
+  docs/pretrained.md). ONNX export by sherpa-onnx:
+  https://huggingface.co/csukuangfj/speaker-embedding-models
+  (wespeaker_en_voxceleb_resnet34_LM.onnx, revision
+  0743f301363dec56491a490f6d6cbc9d67f9a3bf).
+  Creative Commons Attribution 4.0 International (CC-BY-4.0), the licence of
+  the VoxCeleb dataset. Downloaded at runtime, pinned to a commit revision and
+  SHA-256; not redistributed.
+
+  The Kaldi log mel filterbank (crates/loqui-speaker/src/fbank.rs) is
+  reimplemented from the algorithm Kaldi documents and kaldi-native-fbank
+  implements (Apache License 2.0); no source is copied.
+
 Linked libraries with attribution requirements (compiled into binaries):
 
   ONNX Runtime — https://github.com/microsoft/onnxruntime
   Copyright (c) Microsoft Corporation. MIT License. Statically linked by the
-  `ort` crate's prebuilt binaries (loqui-kokoro).
+  `ort` crate's prebuilt binaries (loqui-kokoro, loqui-speaker).
 
   whisper.cpp / ggml — https://github.com/ggml-org/whisper.cpp
   Copyright (c) 2023-2026 The ggml authors. MIT License. Built from source

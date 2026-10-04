@@ -88,6 +88,28 @@ are kept for Kokoro's own voices. `loqui voices` lists every voice, named
 ones included, and `loqui doctor` checks the file. Names are read when the
 server starts, never over HTTP.
 
+### Matching a recording
+
+`loqui match` finds the blend of the stock voices that sounds most like a
+recording, and prints it as a `voices.toml` line:
+
+    loqui match me.wav --name me
+    # similarity 0.71, closest single voice am_michael at 0.62; the closest blend available, not a copy
+    me = "am_michael(65)+am_onyx(35)"
+
+It compares voices by speaker embedding (WeSpeaker ResNet34-LM, downloaded
+on first use): it ranks the stock voices against the recording, starts from
+the mix of the nearest few that best explains it, and then lets Kokoro speak
+candidate blends, keeping the changes that bring them closer. It is a blend
+of the stock voices, so it cannot reach every voice, and it says how close
+it came. With Whisper built in it transcribes the recording first, so the
+candidates speak the same words and the line can suggest a matching speed;
+`--transcript TEXT` gives the words instead. In a program,
+`Engine::match_voice` does the same, and `Engine::speaker_embedding`
+compares any two recordings. A speaker embedding measures how alike voices
+sound: it is not evidence of who is speaking, and must not authenticate
+anyone.
+
 ## Crates
 
 | Crate | |
@@ -98,6 +120,7 @@ server starts, never over HTTP.
 | `loqui-g2p` | GPL-free English G2P (a Rust port of misaki) |
 | `loqui-kokoro` | Kokoro-82M on ONNX Runtime |
 | `loqui-whisper` | Whisper on whisper.cpp |
+| `loqui-speaker` | speaker embeddings: Kaldi's filterbank in Rust and WeSpeaker on ONNX Runtime |
 | `loqui-audio` | WAV, FLAC, Ogg Opus and PCM out (MP3 behind a feature); decoding and resampling for Whisper |
 
 ## Security

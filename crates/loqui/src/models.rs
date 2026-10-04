@@ -38,6 +38,18 @@ impl Pinned {
 
 pub(crate) const KOKORO_REPO: Pinned =
     Pinned { repo: "onnx-community/Kokoro-82M-v1.0-ONNX", revision: "1939ad2a8e416c0acfeecc08a694d14ef25f2231" };
+/// WeSpeaker's speaker models as sherpa-onnx exports them (the VoxCeleb-trained
+/// weights are CC-BY-4.0; see NOTICE).
+pub(crate) const SPEAKER_REPO: Pinned =
+    Pinned { repo: "csukuangfj/speaker-embedding-models", revision: "0743f301363dec56491a490f6d6cbc9d67f9a3bf" };
+/// WeSpeaker ResNet34-LM: 256-dim embeddings from an 80-bin Kaldi filterbank.
+/// Chosen over CAM++ and larger ResNets by the measurements in
+/// `tools/parity/README.md` ("Speaker similarity").
+pub(crate) const SPEAKER_FILE: PinnedFile = PinnedFile {
+    file: "wespeaker_en_voxceleb_resnet34_LM.onnx",
+    sha256: "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012",
+    bytes: 26_530_550,
+};
 #[cfg(feature = "whisper")]
 pub(crate) const WHISPER_REPO: Pinned = Pinned { repo: "ggerganov/whisper.cpp", revision: "5359861c739e955e79d9a303bcbc70fb988958b1" };
 
