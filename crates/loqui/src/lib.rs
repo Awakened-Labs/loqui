@@ -36,11 +36,11 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 // The error types `Error` wraps, so callers can match on the cause.
+pub use blend_match::{Accent, BlendMatch, MAX_EVALUATIONS, MAX_VOICES, MIN_MATCH_SECS, MatchProgress, MatchRequest};
 pub use loqui_audio::{Error as AudioError, Format};
 pub use loqui_g2p::OovFallback;
 pub use loqui_kokoro::{Blend, Error as TtsError};
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, WhisperModel, default_cache_dir, whisper_model};
-pub use blend_match::{Accent, BlendMatch, MAX_EVALUATIONS, MAX_VOICES, MIN_MATCH_SECS, MatchProgress, MatchRequest};
 pub use speaker::{MIN_EMBED_SECS, SpeakerEmbedding};
 
 use loqui_kokoro::{Kokoro, KokoroModel};

@@ -12,10 +12,8 @@
 pub(crate) fn lattice(weights: &[f32], step: u32) -> Vec<u32> {
     let units = 100 / step;
     let total: f32 = weights.iter().sum();
-    let raw: Vec<f32> = weights
-        .iter()
-        .map(|w| if total > 0.0 { w / total * units as f32 } else { units as f32 / weights.len() as f32 })
-        .collect();
+    let raw: Vec<f32> =
+        weights.iter().map(|w| if total > 0.0 { w / total * units as f32 } else { units as f32 / weights.len() as f32 }).collect();
     let mut out: Vec<u32> = raw.iter().map(|r| r.floor() as u32).collect();
     let mut short = units.saturating_sub(out.iter().sum());
     let mut order: Vec<usize> = (0..raw.len()).collect();

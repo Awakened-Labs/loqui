@@ -47,12 +47,10 @@ pub(crate) fn least_squares(anchors: &[&[f32]], target: &[f32]) -> Vec<f32> {
     let lipschitz: f32 = anchors.iter().map(|a| a.iter().map(|x| x * x).sum::<f32>()).sum::<f32>().max(f32::EPSILON);
     let mut w = vec![1.0 / k as f32; k];
     for _ in 0..200 {
-        let residual: Vec<f32> = (0..target.len()).map(|d| anchors.iter().zip(&w).map(|(a, wi)| a[d] * wi).sum::<f32>() - target[d]).collect();
-        let step: Vec<f32> = anchors
-            .iter()
-            .zip(&w)
-            .map(|(a, wi)| wi - a.iter().zip(&residual).map(|(x, r)| x * r).sum::<f32>() / lipschitz)
-            .collect();
+        let residual: Vec<f32> =
+            (0..target.len()).map(|d| anchors.iter().zip(&w).map(|(a, wi)| a[d] * wi).sum::<f32>() - target[d]).collect();
+        let step: Vec<f32> =
+            anchors.iter().zip(&w).map(|(a, wi)| wi - a.iter().zip(&residual).map(|(x, r)| x * r).sum::<f32>() / lipschitz).collect();
         w = project(&step);
     }
     w
@@ -131,7 +129,12 @@ pub(crate) struct Found {
 /// rank order, move up to `step` points from one to the other and keep the
 /// first move that helps by more than [`MIN_GAIN`]; when none does, halve the
 /// step, down to 5. Stops early when the budget is spent.
-pub(crate) fn refine<'v>(voices: &[&'v str], start: Vec<u32>, lead: impl Fn(&[u32]) -> Lead<'v>, eval: &mut Evaluator) -> Result<Found, Error> {
+pub(crate) fn refine<'v>(
+    voices: &[&'v str],
+    start: Vec<u32>,
+    lead: impl Fn(&[u32]) -> Lead<'v>,
+    eval: &mut Evaluator,
+) -> Result<Found, Error> {
     let spec_of = |percents: &[u32]| spec::format(voices, percents, lead(percents));
     let first = spec_of(&start);
     let Some(similarity) = eval.score(&first)? else {
@@ -205,8 +208,7 @@ mod tests {
     fn linear_objective(anchors: &[Vec<f32>], target: Vec<f32>) -> impl FnMut(&str) -> Result<f32, Error> + '_ {
         move |spec: &str| {
             let blend: Blend = spec.parse().unwrap();
-            let weights: Vec<f32> =
-                VOICES.iter().map(|v| blend.parts().iter().find(|(id, _)| id == v).map_or(0.0, |(_, w)| *w)).collect();
+            let weights: Vec<f32> = VOICES.iter().map(|v| blend.parts().iter().find(|(id, _)| id == v).map_or(0.0, |(_, w)| *w)).collect();
             Ok(loqui_speaker::cosine(&mix(anchors, &weights), &target))
         }
     }

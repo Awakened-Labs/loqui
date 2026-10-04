@@ -42,7 +42,12 @@ pub(crate) fn read(path: &Path, count: usize, dim: usize) -> Option<Vec<Vec<f32>
     if bytes.len() != count * dim * 4 {
         return None;
     }
-    Some(bytes.chunks_exact(dim * 4).map(|row| row.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()).collect())
+    Some(
+        bytes
+            .chunks_exact(dim * 4)
+            .map(|row| row.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
+            .collect(),
+    )
 }
 
 /// Keep `anchors` at `path`: little-endian f32, row by row, written to a
@@ -65,7 +70,9 @@ mod tests {
         let base = key("k", "s", &["af_a", "am_b"]);
         assert_eq!(base.len(), 16);
         assert_eq!(base, key("k", "s", &["af_a", "am_b"]), "deterministic");
-        for other in [key("K", "s", &["af_a", "am_b"]), key("k", "S", &["af_a", "am_b"]), key("k", "s", &["af_a"]), key("k", "s", &["am_b", "af_a"])] {
+        for other in
+            [key("K", "s", &["af_a", "am_b"]), key("k", "S", &["af_a", "am_b"]), key("k", "s", &["af_a"]), key("k", "s", &["am_b", "af_a"])]
+        {
             assert_ne!(base, other);
         }
     }

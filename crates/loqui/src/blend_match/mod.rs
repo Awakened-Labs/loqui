@@ -125,7 +125,11 @@ impl Engine {
     /// first time a cache is used, so it takes tens of seconds on a CPU.
     /// Kokoro serves other requests between them. `progress` is told after
     /// each, and cancels the match by returning `Break`.
-    pub fn match_voice(&self, request: &MatchRequest, progress: &mut dyn FnMut(&MatchProgress) -> ControlFlow<()>) -> Result<BlendMatch, Error> {
+    pub fn match_voice(
+        &self,
+        request: &MatchRequest,
+        progress: &mut dyn FnMut(&MatchProgress) -> ControlFlow<()>,
+    ) -> Result<BlendMatch, Error> {
         if !(1..=MAX_VOICES).contains(&request.max_voices) {
             return Err(Error::Invalid(format!("max_voices must be 1 to {MAX_VOICES}")));
         }
@@ -190,7 +194,8 @@ impl Engine {
         // Leave one synthesis for trying the other accent.
         let reserve = usize::from(forced.is_none() && request.evaluations > 1);
         let mut objective = |spec: &str| embed_spoken(&probe, spec, speed.unwrap_or(1.0)).map(|(e, _)| e.similarity(&target));
-        let mut report = |e: Evaluated| progress(&MatchProgress::Evaluated { evaluations: e.evaluations, budget: e.budget, best_similarity: e.best });
+        let mut report =
+            |e: Evaluated| progress(&MatchProgress::Evaluated { evaluations: e.evaluations, budget: e.budget, best_similarity: e.best });
         let mut eval = Evaluator::new(request.evaluations - reserve, &mut objective, &mut report);
 
         let single: Vec<u32> = (0..top.len()).map(|i| if i == 0 { 100 } else { 0 }).collect();
@@ -284,8 +289,11 @@ mod tests {
     #[test]
     fn a_bad_request_is_refused_before_anything_loads() {
         let cache = std::env::temp_dir().join(format!("loqui-match-refuse-{}", std::process::id()));
-        let engine = Engine::builder().cache_dir(&cache).downloads(Downloads::Deny).speaker(Some(SpeakerConfig::default())).build().unwrap();
-        for (max_voices, evaluations, want) in [(0, 36, "max_voices"), (7, 36, "max_voices"), (4, 0, "evaluations"), (4, 201, "evaluations")] {
+        let engine =
+            Engine::builder().cache_dir(&cache).downloads(Downloads::Deny).speaker(Some(SpeakerConfig::default())).build().unwrap();
+        for (max_voices, evaluations, want) in
+            [(0, 36, "max_voices"), (7, 36, "max_voices"), (4, 0, "evaluations"), (4, 201, "evaluations")]
+        {
             let mut request = MatchRequest::new(Vec::new());
             request.max_voices = max_voices;
             request.evaluations = evaluations;
