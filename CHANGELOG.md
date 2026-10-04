@@ -5,7 +5,7 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-04
 
 Voice matching: the blend of the stock voices that sounds most like a
 recording, found by speaker-embedding similarity.
