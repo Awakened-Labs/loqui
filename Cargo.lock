@@ -1188,6 +1188,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loqui-speaker"
+version = "0.2.0"
+dependencies = [
+ "ort",
+ "realfft",
+ "thiserror",
+]
+
+[[package]]
 name = "loqui-whisper"
 version = "0.2.0"
 dependencies = [

@@ -7,6 +7,7 @@ members = [
     "crates/loqui-g2p",
     "crates/loqui-kokoro",
     "crates/loqui-server",
+    "crates/loqui-speaker",
     "crates/loqui-whisper",
 ]
 

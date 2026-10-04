@@ -1,0 +1,34 @@
+[package]
+name = "loqui-speaker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/loqui-speaker"
+keywords = ["speaker", "embedding", "voice", "onnx", "speech"]
+categories = ["multimedia::audio"]
+description = "Speaker embeddings for voice similarity: Kaldi fbank in Rust and WeSpeaker on ONNX Runtime."
+
+[lints]
+workspace = true
+
+[dependencies]
+# ONNX Runtime bindings, exactly as loqui-kokoro pins them: one ONNX Runtime
+# in the build, whatever runs on it.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+    "std",
+    "download-binaries",
+    "tls-rustls",
+    "api-22",
+] }
+
+# The filterbank's FFT, pure Rust; already in the tree through rubato.
+realfft = "3"
+
+thiserror = "2"
+
+[features]
+# As loqui-kokoro's: a system libonnxruntime instead of the downloaded build.
+load-dynamic = ["ort/load-dynamic"]
