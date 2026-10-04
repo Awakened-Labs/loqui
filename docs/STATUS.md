@@ -15,6 +15,7 @@
 | M7 client integration | done over HTTP | an existing OpenAI-compatible speech client, unchanged, speaks and transcribes through `loqui serve` |
 | M8 publish | done | 0.1.0 and 0.2.0 on crates.io; public repository; SECURITY.md (private reporting); docs/embedding.md |
 | Custom voices | done (0.2.0) | named voices from `voices.toml`; `GET /v1/audio/voices` and `loqui voices`; blends with open-speech's grammar and a cache bounded by the voice packs (see `tools/parity/README.md` for blend parity) |
+| Voice matching | done, unreleased (0.3.0) | speaker embeddings (WeSpeaker ResNet34-LM; the filterbank held to kaldi-native-fbank, the encoder to Python onnxruntime at cosine > 0.9999) and `Engine::match_voice` / `loqui match`; on 24 synthesized targets the search reaches the true blend's own similarity on average (0.757 against 0.761; see `tools/parity/README.md`) |
 
 Run `./scripts/gates.sh` before pushing; CI runs the same script, one gate
 per job. `--all-features` needs the CUDA and Vulkan toolkits; the `cuda`

@@ -5,6 +5,34 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
+## [Unreleased]
+
+Voice matching: the blend of the stock voices that sounds most like a
+recording, found by speaker-embedding similarity.
+
+### Added
+
+- `loqui-speaker`, a new crate: Kaldi's log mel filterbank in pure Rust (as
+  WeSpeaker computes it) and `SpeakerEncoder`, a WeSpeaker speaker model on
+  ONNX Runtime.
+- `EngineBuilder::speaker(Some(SpeakerConfig))` enables speaker embeddings,
+  adding the pinned WeSpeaker ResNet34-LM (26 MB, CC-BY-4.0) to `missing()`,
+  `fetch()`, `models()`, preload and idle unload. Off by default.
+- `Engine::speaker_embedding` and `SpeakerEmbedding::similarity`.
+- `Engine::match_voice(&MatchRequest, progress)` returns a `BlendMatch`: the
+  blend in whole percents with the accent first, its similarity, the closest
+  single voice's, the ranking of every stock voice, and a speed when a
+  transcript was given. `MatchProgress` reports each step and can cancel.
+- `loqui match FILE` prints the match as a `voices.toml` line, transcribing
+  the recording first when Whisper is built in. `loqui fetch` also fetches
+  the speaker model.
+
+### Changed
+
+- **Breaking:** `ModelKind` has a `Speaker` variant and is now
+  `#[non_exhaustive]`. `Error` gains `Speaker` and `Cancelled`.
+- `GET /v1/models` lists only the models the server serves.
+
 ## [0.2.0] - 2026-10-03
 
 Custom voices: blends can be given names, and the blends themselves are

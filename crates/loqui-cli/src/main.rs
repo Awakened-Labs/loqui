@@ -1,5 +1,6 @@
 //! `loqui`: local speech, served safely.
 
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -36,6 +37,9 @@ enum Command {
     Fetch(EngineArgs),
     /// List the voices `speak` and `serve` accept, named voices included.
     Voices(VoicesFile),
+    /// Find the blend of the stock voices that sounds most like a recording,
+    /// and print it as a voices.toml line.
+    Match(MatchArgs),
 }
 
 #[derive(Subcommand)]
@@ -190,6 +194,45 @@ struct TranscribeArgs {
     engine: EngineArgs,
 }
 
+#[derive(Args)]
+struct MatchArgs {
+    /// The recording: WAV, FLAC, MP3, AAC, Ogg or WebM, with at least 3 s of
+    /// speech. The first 30 s are used.
+    file: PathBuf,
+    /// The name the voices.toml line gives the blend.
+    #[arg(long, default_value = "matched")]
+    name: String,
+    /// How many of the nearest voices to mix (1 to 6).
+    #[arg(long, default_value_t = 4)]
+    max_voices: usize,
+    /// How many blends to try (1 to 200); each is one short synthesis.
+    #[arg(long, default_value_t = 36)]
+    evaluations: usize,
+    /// The accent the blend speaks with: auto, us or gb.
+    #[arg(long, default_value = "auto", value_parser = parse_accent)]
+    accent: loqui::Accent,
+    /// What the recording says. Speaking the same words sharpens the
+    /// comparison and sets a matching speed.
+    #[arg(long)]
+    transcript: Option<String>,
+    /// Do not transcribe the recording for its words when --transcript is
+    /// not given.
+    #[cfg(feature = "whisper")]
+    #[arg(long)]
+    no_transcribe: bool,
+    #[command(flatten)]
+    engine: EngineArgs,
+}
+
+fn parse_accent(s: &str) -> Result<loqui::Accent, String> {
+    match s {
+        "auto" => Ok(loqui::Accent::Auto),
+        "us" | "american" => Ok(loqui::Accent::American),
+        "gb" | "british" => Ok(loqui::Accent::British),
+        other => Err(format!("unknown accent {other:?}; use auto, us or gb")),
+    }
+}
+
 fn parse_variant(s: &str) -> Result<KokoroVariant, String> {
     match s {
         "fp32" => Ok(KokoroVariant::Fp32),
@@ -207,7 +250,14 @@ fn gpu_ordinal(gpu: &Option<String>) -> Result<Option<i32>, String> {
     }
 }
 
-fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_audio_secs: u64) -> Result<Engine, String> {
+/// The optional models a command needs, beside Kokoro.
+#[derive(Clone, Copy, Default)]
+struct Needs {
+    stt: bool,
+    speaker: bool,
+}
+
+fn build_engine(args: &EngineArgs, needs: Needs, max_input_chars: usize, max_audio_secs: u64) -> Result<Engine, String> {
     let gpu = gpu_ordinal(&args.gpu)?;
     let mut builder = Engine::builder()
         .downloads(if args.offline { Downloads::Deny } else { Downloads::Allow })
@@ -225,8 +275,11 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
     for (name, spec) in args.voices.read()? {
         builder = builder.voice(name, spec);
     }
+    if needs.speaker {
+        builder = builder.speaker(Some(loqui::SpeakerConfig::default()));
+    }
     #[cfg(feature = "whisper")]
-    if want_stt && !args.no_stt {
+    if needs.stt && !args.no_stt {
         builder = builder.stt(Some(loqui::SttConfig {
             model: args.stt_model.clone(),
             device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
@@ -234,7 +287,7 @@ fn build_engine(args: &EngineArgs, want_stt: bool, max_input_chars: usize, max_a
         }));
     }
     #[cfg(not(feature = "whisper"))]
-    let _ = want_stt;
+    let _ = needs.stt;
     builder.build().map_err(|e| e.to_string())
 }
 
@@ -280,7 +333,7 @@ async fn shutdown_signal() {
 
 async fn serve(args: ServeArgs) -> Result<(), String> {
     let config = server_config(&args)?;
-    let engine = build_engine(&args.engine, true, args.max_input_chars, args.max_audio_secs)?;
+    let engine = build_engine(&args.engine, Needs { stt: true, ..Needs::default() }, args.max_input_chars, args.max_audio_secs)?;
     let server = Server::bind(config, engine).await.map_err(|e| e.to_string())?;
     tracing::info!(address = %server.address(), token = %server.token_source(), "loqui listening");
     if server.listen().is_network() && args.insecure_plaintext_network && args.tls_cert.is_none() {
@@ -348,7 +401,7 @@ fn doctor(args: &ServeArgs) -> Result<(), String> {
     say(cache.is_some(), format!("model cache: {}", cache.map_or("none".into(), |c| c.display().to_string())));
     // The engine `serve` would build: a configuration it would refuse, such
     // as a bad voices file, stops it, so say so here.
-    match build_engine(&EngineArgs { preload: false, ..args.engine.clone() }, true, 4096, 0) {
+    match build_engine(&EngineArgs { preload: false, ..args.engine.clone() }, Needs { stt: true, ..Needs::default() }, 4096, 0) {
         Ok(engine) => {
             if let Some(path) = args.engine.voices.path() {
                 let named = engine.voices().map_or(0, |v| v.iter().filter(|v| v.blend.is_some()).count());
@@ -391,7 +444,7 @@ fn token(action: TokenAction) -> Result<(), String> {
 }
 
 fn speak(args: SpeakArgs) -> Result<(), String> {
-    let engine = build_engine(&args.engine, false, 4096, 0)?;
+    let engine = build_engine(&args.engine, Needs::default(), 4096, 0)?;
     let format = loqui::Format::parse(&args.format).map_err(|e| e.to_string())?;
     let request = loqui::SpeakRequest { text: args.text, voice: args.voice, speed: args.speed, format };
     let speech = engine.speak(&request).map_err(|e| e.to_string())?;
@@ -402,7 +455,7 @@ fn speak(args: SpeakArgs) -> Result<(), String> {
 
 #[cfg(feature = "whisper")]
 fn transcribe(args: TranscribeArgs) -> Result<(), String> {
-    let engine = build_engine(&args.engine, true, 4096, 7200)?;
+    let engine = build_engine(&args.engine, Needs { stt: true, ..Needs::default() }, 4096, 7200)?;
     let audio = std::fs::read(&args.file).map_err(|e| format!("{}: {e}", args.file.display()))?;
     let request = loqui::TranscribeRequest { audio, language: args.language, ..Default::default() };
     let result = engine.transcribe(&request).map_err(|e| e.to_string())?;
@@ -428,13 +481,69 @@ fn voices(file: VoicesFile) -> Result<(), String> {
 fn fetch(args: EngineArgs) -> Result<(), String> {
     // Fetching verifies every digest but loads nothing, so preparing a cache
     // never holds a model in memory.
-    let engine = build_engine(&EngineArgs { preload: false, ..args }, true, 4096, 0)?;
+    let engine = build_engine(&EngineArgs { preload: false, ..args }, Needs { stt: true, speaker: true }, 4096, 0)?;
     engine.fetch().map_err(|e| e.to_string())?;
     for m in engine.models() {
         eprintln!("{} ready", m.id);
     }
     engine.fetch_voices().map_err(|e| e.to_string())?;
     eprintln!("{} voices ready", loqui_kokoro::ENGLISH_VOICES.len());
+    Ok(())
+}
+
+/// A name voices.toml accepts: lowercase letters, digits and `_`, and not
+/// shaped like a Kokoro voice (`af_custom`).
+fn check_voice_name(name: &str) -> Result<(), String> {
+    let charset = !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    let kokoro_shaped = matches!(name.as_bytes(), [_, b'f' | b'm', b'_', ..]);
+    if !charset || kokoro_shaped {
+        return Err(format!("--name {name:?}: use lowercase letters, digits and _, not a Kokoro-shaped name like af_custom"));
+    }
+    Ok(())
+}
+
+fn match_voice(args: MatchArgs) -> Result<(), String> {
+    check_voice_name(&args.name)?;
+    let audio = std::fs::read(&args.file).map_err(|e| format!("{}: {e}", args.file.display()))?;
+    #[cfg(feature = "whisper")]
+    let transcribe = args.transcript.is_none() && !args.no_transcribe;
+    #[cfg(not(feature = "whisper"))]
+    let transcribe = false;
+    let engine = build_engine(&args.engine, Needs { stt: transcribe, speaker: true }, 4096, 1800)?;
+    // Only a build with Whisper fills it in.
+    #[cfg_attr(not(feature = "whisper"), allow(unused_mut))]
+    let mut transcript = args.transcript;
+    #[cfg(feature = "whisper")]
+    if transcribe && engine.stt_model_id().is_some() {
+        eprintln!("transcribing {} for its words...", args.file.display());
+        match engine.transcribe(&loqui::TranscribeRequest { audio: audio.clone(), ..Default::default() }) {
+            Ok(t) => transcript = Some(t.text),
+            Err(e) => eprintln!("could not transcribe ({e}); matching on reference sentences instead"),
+        }
+    }
+    let mut request = loqui::MatchRequest::new(audio);
+    request.transcript = transcript;
+    request.max_voices = args.max_voices;
+    request.evaluations = args.evaluations;
+    request.accent = args.accent;
+    let mut progress = |p: &loqui::MatchProgress| {
+        match p {
+            loqui::MatchProgress::Preparing { done, total } => eprint!("\rpreparing the stock voices: {done}/{total}  "),
+            loqui::MatchProgress::Evaluated { evaluations, budget, best_similarity } => {
+                eprint!("\rtrying blends: {evaluations}/{budget}, best similarity {best_similarity:.3}  ")
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    };
+    let found = engine.match_voice(&request, &mut progress).map_err(|e| e.to_string())?;
+    eprintln!();
+    let speed = found.speed.filter(|s| (s - 1.0).abs() >= 0.025).map_or(String::new(), |s| format!("; speak it at --speed {s:.2}"));
+    println!(
+        "# similarity {:.2}, closest single voice {} at {:.2}; the closest blend available, not a copy{speed}",
+        found.similarity, found.closest_voice, found.closest_similarity
+    );
+    println!("{} = \"{}\"", args.name, found.spec);
     Ok(())
 }
 
@@ -458,6 +567,7 @@ fn main() -> ExitCode {
         Command::Doctor(args) => doctor(&args),
         Command::Fetch(args) => fetch(args),
         Command::Voices(file) => voices(file),
+        Command::Match(args) => match_voice(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -471,6 +581,24 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// clap checks its own rules (unique flags, valid defaults) only in
+    /// debug builds and only when a command is parsed; this checks them all
+    /// at once, so a clash fails here rather than in someone's terminal.
+    #[test]
+    fn the_command_line_is_well_formed() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn a_match_name_is_one_voices_toml_accepts() {
+        assert!(check_voice_name("me").is_ok());
+        assert!(check_voice_name("warm_2").is_ok());
+        for bad in ["", "Me", "my voice", "af_me", "bm_x"] {
+            assert!(check_voice_name(bad).is_err(), "{bad:?}");
+        }
+    }
 
     /// A scratch directory, removed on drop.
     struct TempDir(PathBuf);

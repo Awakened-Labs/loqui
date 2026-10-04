@@ -15,7 +15,7 @@ description = "Kokoro-82M text-to-speech on ONNX Runtime, fed by loqui-g2p. GPL-
 workspace = true
 
 [dependencies]
-loqui-g2p = { path = "../loqui-g2p", version = "0.2.0" }
+loqui-g2p = { path = "../loqui-g2p", version = "0.3.0" }
 
 # ONNX Runtime bindings. Pinned exactly: 2.0 is still in release candidates
 # and the API moves between them. Default features are off to keep two of

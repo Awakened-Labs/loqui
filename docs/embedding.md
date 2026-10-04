@@ -74,6 +74,28 @@ prepared for `Downloads::Deny` is checked at startup too (`loqui fetch`
 fetches every pack). If you use `loqui-kokoro` directly, a voice is a
 `loqui_kokoro::Blend`: `kokoro.speak(text, &"af_bella(2)+af_sky(1)".parse()?, 1.0)`.
 
+**Speaker embeddings and voice matching.** `EngineBuilder::speaker(Some(
+SpeakerConfig::default()))` adds a third model (WeSpeaker ResNet34-LM, 26 MB,
+pinned and hashed like the others, and listed by `missing()` and fetched by
+`fetch()` only when enabled). `Engine::speaker_embedding(bytes)` returns a
+unit vector describing a recording's voice, from its first 30 s of speech;
+`SpeakerEmbedding::similarity` compares two. `Engine::match_voice(&request,
+progress)` finds the blend of the stock voices nearest a recording:
+
+- It **speaks** to search: about `MatchRequest::evaluations` (36 by default)
+  syntheses of a few seconds each, plus one per stock voice the first time
+  a cache is used (kept under `anchors/` in the cache). Expect tens of
+  seconds on a CPU. Kokoro serves other requests between syntheses, and
+  `progress` can cancel by returning `ControlFlow::Break`, which ends the
+  call with `Error::Cancelled`.
+- If untrusted callers can reach it, **rate-limit it**: one request costs as
+  much as dozens of `speak` calls. loqui-server does not expose it.
+- **A similarity is not an identity.** An embedding says how alike two
+  voices sound, which recordings, synthesizers and impressions all
+  influence. Never use it to authenticate a speaker.
+- The match is the closest blend available, not a copy of the voice:
+  `BlendMatch` reports the best single voice's similarity beside the blend's.
+
 **Concurrency.** `Engine` is cheap to clone, and the clones share the loaded
 models. Every call is synchronous and CPU- or GPU-bound, from tens of
 milliseconds to several seconds, so in async code run it under
@@ -106,6 +128,7 @@ Unlicense), apart from one weak-copyleft crate, and links no GPL code:
 | symphonia (audio demuxing and decoding) | MPL-2.0: copyleft per file, used unmodified | always |
 | ONNX Runtime | MIT, downloaded prebuilt by `ort` at build time | always (text-to-speech) |
 | whisper.cpp | MIT, built from source (cmake, C++) | `whisper` |
+| WeSpeaker ResNet34-LM weights | **CC-BY-4.0**, downloaded at run time | `EngineBuilder::speaker` |
 | opus-rs | BSD-3-Clause | always |
 | LAME | **LGPL**, statically linked | **`mp3` only** |
 
@@ -122,7 +145,9 @@ Unlicense), apart from one weak-copyleft crate, and links no GPL code:
   `loqui-kokoro`'s `load-dynamic` feature and provide `libonnxruntime` at
   run time.
 - Model weights are not redistributed by loqui. Kokoro-82M is Apache-2.0
-  and Whisper is MIT. `NOTICE` lists every attribution.
+  and Whisper is MIT. The speaker model is CC-BY-4.0 (the licence of the
+  VoxCeleb data it was trained on): a program that downloads it should carry
+  its attribution, which `NOTICE` gives. `NOTICE` lists every attribution.
 
 ## Embedding the server: `loqui_server::Server`
 
@@ -190,7 +215,10 @@ ship.
 ### What not to add
 
 The server deliberately has no web UI, no OpenAPI page and no model
-management over HTTP: models are chosen when the server starts. If you put
+management over HTTP: models are chosen when the server starts. Nor does it
+serve speaker embeddings or voice matching: one is a biometric-shaped vector
+and the other costs dozens of syntheses per request, so both stay in process
+or behind your own authenticated, rate-limited route. If you put
 routes of your own next to loqui's (behind the same listener or a proxy),
 they do not inherit its policy layer. Give them their own authentication,
 `Origin` refusal and limits.
