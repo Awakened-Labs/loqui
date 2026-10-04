@@ -125,6 +125,21 @@ time is dominated by Kokoro at a real-time factor of 0.35 on one core.
 Decision: ResNet34-LM, K = 4, a budget of 36. CAM++ is no better; K = 6 buys
 0.009 for half as much time again.
 
+The Rust matcher (`Engine::match_voice`, defaults), run by
+`cargo test -p loqui --no-default-features --test voice_match -- --ignored
+--test-threads 1` against the pinned models (Kokoro fp32, CPU, one core
+shared with another build; 458 s for all four, the 28 anchors included):
+
+| Target, on a sentence the search never speaks | Found | Similarity | Best single voice | Syntheses |
+|---|---|---|---|---|
+| `bm_george` | `bm_george` | 0.907 | 0.907 | 16 |
+| `af_bella(70)+af_sky(30)` | `af_bella(65)+af_sky(25)+af_nova(10)` | 0.878 | 0.821 (`af_bella`) | 30 |
+
+`the_same_voice_scores_above_other_voices` and `matching_is_deterministic`
+(12 syntheses, the same blend and similarity twice) pass as well. The Rust
+encoder agrees with Python onnxruntime on the same model at cosine > 0.9999
+(`loqui-speaker`'s ignored `the_embedding_matches_onnxruntime_in_python`).
+
 ### 2026-10-02: voice blends
 
 The phonemes of "The birch canoe slid on the smooth planks, and the quick

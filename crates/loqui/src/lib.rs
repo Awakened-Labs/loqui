@@ -25,6 +25,7 @@
 //! untrusted input, and the licensing each feature brings (leave `mp3` off in
 //! proprietary programs).
 
+mod blend_match;
 mod models;
 mod slot;
 mod speaker;
@@ -39,6 +40,7 @@ pub use loqui_audio::{Error as AudioError, Format};
 pub use loqui_g2p::OovFallback;
 pub use loqui_kokoro::{Blend, Error as TtsError};
 pub use models::{Downloads, KokoroVariant, WHISPER_MODELS, WhisperModel, default_cache_dir, whisper_model};
+pub use blend_match::{Accent, BlendMatch, MAX_EVALUATIONS, MAX_VOICES, MIN_MATCH_SECS, MatchProgress, MatchRequest};
 pub use speaker::{MIN_EMBED_SECS, SpeakerEmbedding};
 
 use loqui_kokoro::{Kokoro, KokoroModel};
