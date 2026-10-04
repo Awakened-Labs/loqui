@@ -156,13 +156,13 @@ pub fn subtract_mean(features: &mut Features) {
         return;
     }
     let mut mean = [0.0f64; MEL_BINS];
-    for row in features.data.chunks_exact(MEL_BINS) {
+    for row in features.data.as_chunks::<MEL_BINS>().0 {
         for (m, v) in mean.iter_mut().zip(row) {
             *m += f64::from(*v);
         }
     }
     let frames = features.frames as f64;
-    for row in features.data.chunks_exact_mut(MEL_BINS) {
+    for row in features.data.as_chunks_mut::<MEL_BINS>().0 {
         for (v, m) in row.iter_mut().zip(&mean) {
             *v -= (m / frames) as f32;
         }

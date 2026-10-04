@@ -42,12 +42,7 @@ pub(crate) fn read(path: &Path, count: usize, dim: usize) -> Option<Vec<Vec<f32>
     if bytes.len() != count * dim * 4 {
         return None;
     }
-    Some(
-        bytes
-            .chunks_exact(dim * 4)
-            .map(|row| row.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
-            .collect(),
-    )
+    Some(bytes.chunks_exact(dim * 4).map(|row| row.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect()).collect())
 }
 
 /// Keep `anchors` at `path`: little-endian f32, row by row, written to a

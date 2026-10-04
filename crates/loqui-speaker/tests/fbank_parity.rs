@@ -6,7 +6,7 @@
 use loqui_speaker::{Fbank, MEL_BINS};
 
 fn read<T, const N: usize>(bytes: &[u8], from: fn([u8; N]) -> T) -> Vec<T> {
-    bytes.chunks_exact(N).map(|c| from(c.try_into().unwrap())).collect()
+    bytes.as_chunks::<N>().0.iter().map(|c| from(*c)).collect()
 }
 
 #[test]
