@@ -13,6 +13,10 @@
 # build (a C compiler and make), which the workspace gates never reach.
 # `package` builds every crate from what crates.io would receive, and keeps
 # each under its 10 MiB limit (loqui-g2p embeds ~9 MiB of lexicons and weights).
+# scripts/package.sh verifies each crate against its siblings as they are now,
+# which `cargo package` alone does not when it runs twice at one version
+# (issue #3), and scripts/package-test.sh first proves that it still does on
+# the cargo at hand. Both need jq and GNU tar.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,16 +34,8 @@ mp3() {
 }
 deny() { cargo deny check; }
 package() {
-    cargo package --workspace --locked
-    local limit=$((10 * 1024 * 1024)) crate size
-    for crate in target/package/*.crate; do
-        size=$(stat -c %s "$crate")
-        echo "$(basename "$crate"): $size bytes"
-        if [ "$size" -ge "$limit" ]; then
-            echo "$crate is over crates.io's 10 MiB limit" >&2
-            return 1
-        fi
-    done
+    scripts/package-test.sh
+    scripts/package.sh
 }
 
 gates=(fmt clippy test tts-only mp3 deny package)

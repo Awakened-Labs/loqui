@@ -18,7 +18,10 @@
 | Voice matching | done (0.3.0) | speaker embeddings (WeSpeaker ResNet34-LM; the filterbank held to kaldi-native-fbank, the encoder to Python onnxruntime at cosine > 0.9999) and `Engine::match_voice` / `loqui match`; on 24 synthesized targets the search reaches the true blend's own similarity on average (0.757 against 0.761; see `tools/parity/README.md`) |
 
 Run `./scripts/gates.sh` before pushing; CI runs the same script, one gate
-per job. `--all-features` needs the CUDA and Vulkan toolkits; the `cuda`
+per job. Publish right after `./scripts/gates.sh package` passes on the
+same commit: `cargo publish --workspace` verifies through the caches that
+gate keeps current, and on its own can verify against stale siblings
+(issue #3). `--all-features` needs the CUDA and Vulkan toolkits; the `cuda`
 build lives in `docker/cuda.Dockerfile`.
 
 GPU builds need **CUDA 13**: the ONNX Runtime that `ort` rc.13 downloads
