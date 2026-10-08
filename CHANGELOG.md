@@ -5,6 +5,20 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
+## [Unreleased]
+
+### Fixed
+
+- Opus decodes and encodes on CPUs with AVX but no FMA (Sandy and Ivy
+  Bridge, Bulldozer, VMs that mask FMA) instead of being refused.
+  loqui-audio now requires opus-rs 0.1.36, the first release that checks for
+  FMA before running its FMA kernels (restsend/opus-rs#31).
+
+### Deprecated
+
+- The `unguarded-opus` feature does nothing now. Remove it from your
+  manifest: it goes in the next breaking release.
+
 ## [0.3.0] - 2026-10-04
 
 Voice matching: the blend of the stock voices that sounds most like a

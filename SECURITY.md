@@ -155,7 +155,5 @@ Out of scope:
 - Uploaded audio is parsed by symphonia and opus-rs, both pure Rust. They
   are not fuzzed by this project, and a decoder bug is a denial of service.
   Treat the upload limits as part of your defence.
-- opus-rs crashes on CPUs with AVX but no FMA (restsend/opus-rs#30), so
-  loqui refuses Opus input on those CPUs rather than decoding it.
 - With `--require-token` off (the default), the Unix socket trusts every
   process running as this user. That is the boundary it is designed around.

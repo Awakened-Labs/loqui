@@ -35,17 +35,13 @@ Whisper but cannot run Kokoro on the GPU. The image is 3.3 GB (open-speech:
   unmodified). One advisory is ignored in `deny.toml`: `number_prefix`
   (unmaintained) arrives through hf-hub 0.4's progress bar and goes away
   with hf-hub 1.x, an API migration not yet done.
-- Opus input is refused on CPUs with AVX but no FMA (Sandy/Ivy Bridge):
-  opus-rs crashes there (restsend/opus-rs#30). Drop the guard in
-  `loqui-audio/src/opus.rs` once a release carries #31. Until then, builds
-  that patch opus-rs with #31 can enable `unguarded-opus`.
 - Opus output is 64 kbps CELT, encoded from 48 kHz, to route around two
   opus-rs 0.1.34 encoder bugs: 24 kHz input comes out as garbage in every
   mode (restsend/opus-rs#37), and below 64 kbps the SILK/hybrid paths mangle
   the first ~200 ms and run up to 17 samples behind the pre-skip
   (restsend/opus-rs#38). The encode test asserts correlation > 0.99, which
-  either bug fails. Once both are fixed, encode from 24 kHz at 24-32 kbps,
-  which is plenty for speech.
+  either bug fails. opus-rs 0.1.37 fixes both, so encoding from 24 kHz at
+  24-32 kbps, which is plenty for speech, is now issue #8.
 - WebM/Opus keeps up to 13.5 ms of trailing padding: symphonia 0.6 parses
   `DiscardPadding` but does not pass it on. Ogg is trimmed exactly.
 - CI does not build the `cuda` feature (no toolkit on hosted runners); the

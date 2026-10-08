@@ -58,12 +58,6 @@ server does:
 - Uploaded audio is parsed by pure-Rust decoders (symphonia and opus-rs).
   Treat a decoder bug as a possible denial of service, and keep the caps.
 
-**Older CPUs.** Opus is refused, in both directions, on CPUs with AVX but no
-FMA (Sandy and Ivy Bridge, some VMs), because opus-rs crashes there. A
-program that patches opus-rs with restsend/opus-rs#31, through
-`[patch.crates-io]`, can enable `unguarded-opus` to lift the refusal.
-Without the patch, that feature turns the error back into a crash.
-
 **Named voices.** `EngineBuilder::voice("will", "am_puck(1)+am_liam(1)")`
 names a blend of built-in voices; afterwards `"will"` works anywhere a
 voice does, inside other blends too. `build()` checks every name and spec

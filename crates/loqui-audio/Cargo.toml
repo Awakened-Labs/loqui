@@ -34,7 +34,9 @@ symphonia = { version = "0.6", features = ["mp3", "isomp4", "aac"] }
 rubato = "=4"
 
 thiserror = "2"
-opus-rs = "0.1.34"
+# 0.1.36 is the first that checks for FMA before running its FMA kernels
+# (restsend/opus-rs#31); earlier releases crash CPUs with AVX but no FMA.
+opus-rs = "0.1.36"
 
 # MP3 encoding: LAME 3.100 (LGPL), compiled from bundled source with a C
 # compiler and make, linked statically. Only with the `mp3` feature.
@@ -45,7 +47,7 @@ default = []
 # MP3 output through LAME. Off by default: it is the one LGPL component, and
 # a program that links loqui in process takes on LAME's relinking terms.
 mp3 = ["dep:mp3lame-encoder"]
-# Skips the refusal to run Opus on CPUs with AVX but no FMA. Only for builds
-# that patch opus-rs with restsend/opus-rs#31 (for example through
-# `[patch.crates-io]`); without that fix, Opus crashes those CPUs.
+# Does nothing. It once lifted a refusal to run Opus on CPUs with AVX but no
+# FMA, which opus-rs 0.1.36 made unnecessary. Kept so that manifests naming it
+# still build; it goes in the next breaking release.
 unguarded-opus = []

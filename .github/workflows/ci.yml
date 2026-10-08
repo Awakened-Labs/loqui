@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gate: [fmt, clippy, test, tts-only, mp3, package]
+        gate: [fmt, clippy, test, tts-only, mp3, package, no-fma]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -37,6 +37,9 @@ jobs:
         if: matrix.gate != 'fmt'
         with:
           key: ${{ matrix.gate }}
+      # The emulated CPU with AVX but no FMA that no hosted runner is.
+      - if: matrix.gate == 'no-fma'
+        run: sudo apt-get update && sudo apt-get install -y qemu-user
       - run: ./scripts/gates.sh ${{ matrix.gate }}
 
   deny:
