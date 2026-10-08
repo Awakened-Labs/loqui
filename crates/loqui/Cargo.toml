@@ -51,5 +51,6 @@ cuda = ["loqui-kokoro/cuda", "loqui-whisper?/cuda"]
 # CUDA for Whisper only, leaving Kokoro on the CPU and ONNX Runtime's CPU
 # build.
 whisper-cuda = ["whisper", "loqui-whisper/cuda"]
-# See loqui-audio's `unguarded-opus`: only for builds that patch opus-rs.
+# Does nothing, like loqui-audio's `unguarded-opus`; goes in the next
+# breaking release.
 unguarded-opus = ["loqui-audio/unguarded-opus"]

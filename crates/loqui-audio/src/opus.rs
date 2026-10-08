@@ -25,9 +25,6 @@ impl Opus {
     /// `head` is the stream's OpusHead (the codec's extra data in Ogg and in
     /// WebM alike), which carries the encoder priming to drop.
     pub(crate) fn new(channels: usize, head: Option<&[u8]>) -> Result<Self, Error> {
-        if !cpu_supported() {
-            return Err(Error::Decode(UNSUPPORTED_CPU.into()));
-        }
         if !(1..=2).contains(&channels) {
             return Err(Error::Decode(format!("Opus with {channels} channels is not supported; mono and stereo are")));
         }
@@ -65,9 +62,6 @@ const BITRATE: i32 = 64_000;
 /// Encodes speech as Ogg Opus (RFC 7845): mono, 20 ms packets, the priming
 /// and end padding marked so a player plays exactly `pcm`'s samples.
 pub(crate) fn encode_ogg(pcm: &Pcm) -> Result<Vec<u8>, Error> {
-    if !cpu_supported() {
-        return Err(Error::Encode(UNSUPPORTED_CPU.into()));
-    }
     // Opus accepts 8 to 48 kHz input, but opus-rs 0.1.34 encodes 24 kHz
     // (Kokoro's rate) into garbage in every mode (restsend/opus-rs#37),
     // while 48 kHz round-trips faithfully. So everything is encoded from 48.
@@ -124,25 +118,5 @@ fn pre_skip(head: &[u8]) -> usize {
     match head {
         [b'O', b'p', b'u', b's', b'H', b'e', b'a', b'd', _version, _channels, lo, hi, ..] => usize::from(u16::from_le_bytes([*lo, *hi])),
         _ => 0,
-    }
-}
-
-const UNSUPPORTED_CPU: &str = "Opus is unavailable on this CPU: it has AVX without FMA, which crashes opus-rs (restsend/opus-rs#30)";
-
-/// opus-rs runs FMA instructions after checking only for AVX, so a CPU with
-/// AVX and no FMA (Sandy/Ivy Bridge, Bulldozer, some VMs) dies of SIGILL
-/// mid-codec. Refusing Opus there turns a crash into an error. Remove once
-/// an opus-rs release gates on FMA (restsend/opus-rs#31).
-///
-/// The `unguarded-opus` feature skips the check, for builds that patch
-/// opus-rs with that fix themselves.
-fn cpu_supported() -> bool {
-    #[cfg(all(target_arch = "x86_64", not(feature = "unguarded-opus")))]
-    {
-        !std::arch::is_x86_feature_detected!("avx") || std::arch::is_x86_feature_detected!("fma")
-    }
-    #[cfg(any(not(target_arch = "x86_64"), feature = "unguarded-opus"))]
-    {
-        true
     }
 }
