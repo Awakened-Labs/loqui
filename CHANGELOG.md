@@ -13,6 +13,12 @@ break the API.
   Bridge, Bulldozer, VMs that mask FMA) instead of being refused.
   loqui-audio now requires opus-rs 0.1.36, the first release that checks for
   FMA before running its FMA kernels (restsend/opus-rs#31).
+- `resample` no longer smears the start of what it resamples. rubato 4.0.0
+  trimmed its startup delay but left the rest of the first chunk unshifted,
+  so the first 21-64 ms (1,024 input samples) came out as a delayed copy
+  overlapping the right one. That hit Whisper input not already at 16 kHz,
+  voice-match targets and candidates, and Opus output. loqui-audio now
+  requires rubato 5.0.1 (HEnquist/rubato#142).
 
 ### Deprecated
 
