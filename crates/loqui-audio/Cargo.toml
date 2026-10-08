@@ -30,8 +30,10 @@ flacenc = { version = "0.5", default-features = false }
 # plus MP3 and MP4/AAC, the formats browsers and phones record.
 symphonia = { version = "0.6", features = ["mp3", "isomp4", "aac"] }
 
-# Resampling to Whisper's 16 kHz. Pinned to one major: its API moves.
-rubato = "=4"
+# Resampling to Whisper's 16 kHz. Pinned to one major: its API moves. 5.0.1
+# is the first that trims the resampler's delay without leaving the first
+# chunk's output unshifted (HEnquist/rubato#142).
+rubato = "5.0.1"
 
 thiserror = "2"
 # 0.1.36 is the first that checks for FMA before running its FMA kernels

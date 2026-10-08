@@ -159,6 +159,37 @@ mod tests {
         assert!((out.duration_secs() - 1.0).abs() < 0.01, "{}", out.duration_secs());
     }
 
+    /// A rising chirp computed at any rate, so a resampled chirp can be
+    /// held to the same chirp computed at the target rate.
+    fn chirp(rate: u32, secs: f64) -> Pcm {
+        let samples = (0..(f64::from(rate) * secs) as usize)
+            .map(|i| {
+                let t = i as f64 / f64::from(rate);
+                ((std::f64::consts::TAU * (200.0 * t + 600.0 * t * t)).sin() * 0.4) as f32
+            })
+            .collect();
+        Pcm { samples, rate }
+    }
+
+    /// Every 20 ms of the output, the first included: rubato 4.0.0 left its
+    /// first chunk's output (21-64 ms) unshifted when trimming the
+    /// resampler's delay, at -4 to 3 dB against the rest's 75 (rubato#142).
+    #[test]
+    fn resamples_faithfully_from_the_first_sample() {
+        for (from, to) in [(24_000, 48_000), (22_050, 48_000), (16_000, 48_000), (48_000, 16_000), (24_000, 16_000)] {
+            let out = resample(chirp(from, 1.0), to).unwrap();
+            let ideal = chirp(to, 1.0);
+            assert!(out.samples.len().abs_diff(ideal.samples.len()) <= 1, "{from} -> {to} Hz: {} samples", out.samples.len());
+            let window = to as usize / 50;
+            for (i, (got, want)) in out.samples.chunks(window).zip(ideal.samples.chunks(window)).enumerate() {
+                let signal: f32 = want.iter().map(|s| s * s).sum();
+                let noise: f32 = got.iter().zip(want).map(|(a, b)| (a - b) * (a - b)).sum();
+                let snr = 10.0 * (signal / noise).log10();
+                assert!(snr > 40.0, "{from} -> {to} Hz: 20 ms window {i} at {snr:.1} dB");
+            }
+        }
+    }
+
     #[test]
     fn enforces_the_length_cap_while_decoding() {
         let pcm = Pcm { samples: vec![0.1; 16_000 * 3], rate: 16_000 };
