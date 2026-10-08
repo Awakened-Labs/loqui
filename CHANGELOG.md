@@ -7,6 +7,15 @@ break the API.
 
 ## [Unreleased]
 
+### Changed
+
+- Opus speech is encoded from Kokoro's 24 kHz at 24 kbps, instead of being
+  resampled to 48 kHz and encoded at 64 kbps. That is about 3 KB a second
+  instead of 8, with one resample fewer per response. Other rates go up to
+  24 kHz, or to 48 above that. Whisper still transcribes the speech word for
+  word. loqui-audio now requires opus-rs 0.1.37, whose encoder handles 24 kHz
+  input and sub-64 kbps rates (restsend/opus-rs#37, #38).
+
 ### Fixed
 
 - Opus decodes and encodes on CPUs with AVX but no FMA (Sandy and Ivy

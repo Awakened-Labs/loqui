@@ -35,13 +35,14 @@ Whisper but cannot run Kokoro on the GPU. The image is 3.3 GB (open-speech:
   unmodified). One advisory is ignored in `deny.toml`: `number_prefix`
   (unmaintained) arrives through hf-hub 0.4's progress bar and goes away
   with hf-hub 1.x, an API migration not yet done.
-- Opus output is 64 kbps CELT, encoded from 48 kHz, to route around two
-  opus-rs 0.1.34 encoder bugs: 24 kHz input comes out as garbage in every
-  mode (restsend/opus-rs#37), and below 64 kbps the SILK/hybrid paths mangle
-  the first ~200 ms and run up to 17 samples behind the pre-skip
-  (restsend/opus-rs#38). The encode test asserts correlation > 0.99, which
-  either bug fails. opus-rs 0.1.37 fixes both, so encoding from 24 kHz at
-  24-32 kbps, which is plenty for speech, is now issue #8.
+- Opus output is 24 kbps CELT from 24 kHz. opus-rs's CELT from 24 kHz tops
+  out near 20 dB SNR whatever the bitrate, where libopus reaches 40
+  (restsend/opus-rs#54). At 24 kbps the quantization noise is louder than
+  that ceiling, so it costs nothing today. A higher bitrate would need the
+  fix, or encoding from 48 kHz.
+- Opus uploads in mediumband (12 kHz) SILK decode to garbage: opus-rs's SILK
+  decoder uses the wideband LPC order there (restsend/opus-rs#53, issue #11).
+  Common voice-note encoders record at 16 or 48 kHz.
 - WebM/Opus keeps up to 13.5 ms of trailing padding: symphonia 0.6 parses
   `DiscardPadding` but does not pass it on. Ogg is trimmed exactly.
 - CI does not build the `cuda` feature (no toolkit on hosted runners); the

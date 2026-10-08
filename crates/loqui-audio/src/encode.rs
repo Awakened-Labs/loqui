@@ -101,13 +101,18 @@ mod tests {
 
     /// Opus is lossy, so the check is structural: symphonia's Ogg demuxer
     /// reads our pages, the priming and padding are trimmed to the sample,
-    /// and what remains lines up with the input in time.
+    /// what remains lines up with the input in time, and it costs a speech
+    /// bitrate. 24 kHz and below are encoded from 24 kHz, above from 48.
     #[test]
     fn opus_decodes_to_the_same_length_and_timing() {
-        for (rate, secs) in [(24_000, 1.3), (22_050, 0.7), (16_000, 1.0), (48_000, 0.02)] {
+        for (rate, secs) in [(24_000, 1.3), (22_050, 0.7), (16_000, 1.0), (44_100, 0.5), (48_000, 0.02)] {
             let original = chirp(rate, secs);
             let bytes = encode(&original, Format::Opus).unwrap();
             assert_eq!(&bytes[..4], b"OggS");
+            // Half again the nominal rate, plus headers and lookahead: the
+            // 64 kbps this encoder once used fails it by far.
+            let budget = secs * crate::opus::BITRATE as f32 / 8.0 * 1.5 + 400.0;
+            assert!((bytes.len() as f32) < budget, "{rate} Hz: {} bytes for {secs} s", bytes.len());
             let back = decode(&bytes, None).unwrap();
             assert_eq!(back.rate, 48_000);
             let expected = crate::resample(original, 48_000).unwrap();
@@ -117,8 +122,10 @@ mod tests {
                 continue; // one frame: too short to judge the codec's fidelity
             }
             let r = correlation(&back.samples, &expected.samples);
-            // Either opus-rs bug we route around (#37: 24 kHz input; #38:
-            // SILK/hybrid timing) still scores 0.9; exact CELT reaches 0.999.
+            // What caught opus-rs's 24 kHz garbage (restsend/opus-rs#37) and
+            // its late SILK/hybrid timing (#38), both fixed by 0.1.37. CELT
+            // from 24 kHz reaches 0.995 (an opus-rs ceiling, #54), from 48
+            // 0.9998; SILK and hybrid, even libopus's, stay near 0.95.
             assert!(r > 0.99, "{rate} Hz: correlation {r}");
             // A pre-skip off by even a millisecond would fall well short.
             let shifted = correlation(&back.samples[48..], &expected.samples);

@@ -81,6 +81,55 @@ from `csukuangfj/speaker-embedding-models` at revision
 
 ## Results log
 
+### 2026-10-08: Opus at speech bitrates (issue #8)
+
+opus-rs 0.1.37, mono, 20 ms packets. The speech is Kokoro `af_heart` reading
+five sentences (two Harvard, three assistant-style; 26.2 s joined with 0.6 s
+gaps). Each setting is `encode_ogg` run on the same WAVs. Decoding is
+ffmpeg 7.1.3's libopus, compared with the WAV upsampled by ffmpeg.
+Transcription is large-v3-turbo through `loqui transcribe` (CPU), compared
+after lowercasing and dropping punctuation.
+
+| Input, bitrate | Mode | Size | SNR vs WAV, 5 clips (mean) | Lag, length | Whisper vs the WAV's transcript |
+|---|---|---|---|---|---|
+| 48 kHz, 64 kbps (0.3.0) | CELT FB | 8.2 KB/s | 11.3-19.2 dB (15.3) | 0, exact | same |
+| 48 kHz, 32 kbps | CELT FB | 4.2 KB/s | 9.1-12.8 dB (11.1) | 0, exact | same words; "3" and "6" for "3:00" and "6:00" |
+| 48 kHz, 24 kbps | CELT FB | 3.2 KB/s | 7.6-10.4 dB (9.4) | 0, exact | likewise |
+| 24 kHz, 32 kbps | CELT SWB | 4.2 KB/s | 12.4-13.2 dB (12.9) | 0, exact | same, less an "If" Whisper adds to the WAV |
+| **24 kHz, 24 kbps** | CELT SWB | **3.2 KB/s** | 9.8-10.8 dB (10.3) | 0, exact | likewise |
+| libopus, 24 kHz, 24 kbps, CELT (`lowdelay`) | CELT SWB | 3.5 KB/s | 10.7-11.6 dB (11.1) | 0, exact | not run |
+| libopus, 24 kHz, 32 kbps, CELT (`lowdelay`) | CELT SWB | 4.7 KB/s | 13.3-14.1 dB (13.7) | 0, exact | not run |
+| libopus, 24 kHz, 24 kbps (`audio`) | hybrid | 3.1 KB/s | 9.9-10.4 dB (10.2) | -1 to 0, exact | not run |
+
+Against the input text, every Opus setting differs only in Whisper's number
+formatting ("3:00", "6:00", "11%"), plus that "If" in the 48 kHz rows. At
+speech bitrates, opus-rs from 24 kHz matches libopus per byte, and it beats
+opus-rs from 48 kHz at the same size.
+
+The encode test's chirp (`opus_decodes_to_the_same_length_and_timing`,
+correlation against the input after decoding):
+
+- **SILK and hybrid cannot hold its > 0.99**, libopus's own included. libopus
+  picks hybrid or SILK at 24-32 kbps and scores 0.94-0.96, 2 samples early.
+  opus-rs's `Voip` goes hybrid (0.88-0.93, 3 samples early). opus-rs encodes
+  8, 12 and 16 kHz input as SILK only (0.95 and 0.97 at 12 and 16 kHz,
+  decoded by libopus). So everything goes through CELT: up to 24 kHz is
+  encoded from 24 kHz, above that from 48, and `Audio` stays in CELT down to
+  about 18 kbps.
+- **CELT from 24 kHz reaches 0.995 at any bitrate.** opus-rs's 24 kHz CELT
+  path tops out near 20 dB SNR where libopus reaches 40 (restsend/opus-rs#54).
+  From 48 kHz it reaches 0.9998. Speech at 24 kbps sits below that ceiling
+  (table above).
+- **Pre-skip:** libopus writes 312 for 24 kHz input, as for 48. Every CELT
+  encode above decodes in libopus at lag 0 and to the exact length.
+
+Along the way: `resample` smeared its first 21-64 ms (rubato 4.0.0, fixed by
+#10); until then the test's reference was smeared too, which held the 24 kHz
+chirp to 0.979. Mediumband SILK uploads decode to garbage in opus-rs
+(restsend/opus-rs#53, #11).
+
+Decision: 24 kHz, 24 kbps, `Audio`.
+
 ### 2026-10-04: speaker similarity over Kokoro voices
 
 28 stock voices x 5 Harvard sentences; 12 voice pairs (six within a gender
