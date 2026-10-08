@@ -49,33 +49,39 @@ impl Opus {
 }
 
 /// The encoder's lookahead, in 48 kHz samples: 2.5 ms of CELT overlap plus
-/// 4 ms of delay compensation, as in libopus, and as measured on opus-rs;
-/// written as the OpusHead's pre-skip so players drop it.
+/// 4 ms of delay compensation, as in libopus, which writes the same 312 for
+/// 24 kHz input as for 48; written as the OpusHead's pre-skip so players drop
+/// it. Measured on opus-rs from both rates: libopus decodes at lag 0.
 const PRE_SKIP: u16 = 312;
 
-/// High for one voice, and chosen for opus-rs rather than for speech: below
-/// 64 kbps its SILK and hybrid paths mangle the first ~200 ms and run up to
-/// 17 samples behind the pre-skip (restsend/opus-rs#38); at 64 kbps it stays
-/// in CELT, which is exact from the first sample. 8 KB a second.
-const BITRATE: i32 = 64_000;
+/// A speech rate: the lowest that keeps the encode test's correlation and
+/// alignment and has Whisper transcribe Kokoro speech word for word (32 and
+/// 64 kbps were measured too; see `tools/parity/README.md`). opus-rs's
+/// `Audio` mode stays in CELT here; below about 18 kbps it turns to SILK.
+/// 3 KB a second.
+pub(crate) const BITRATE: i32 = 24_000;
 
 /// Encodes speech as Ogg Opus (RFC 7845): mono, 20 ms packets, the priming
 /// and end padding marked so a player plays exactly `pcm`'s samples.
 pub(crate) fn encode_ogg(pcm: &Pcm) -> Result<Vec<u8>, Error> {
-    // Opus accepts 8 to 48 kHz input, but opus-rs 0.1.34 encodes 24 kHz
-    // (Kokoro's rate) into garbage in every mode (restsend/opus-rs#37),
-    // while 48 kHz round-trips faithfully. So everything is encoded from 48.
-    let input = resample(pcm.clone(), RATE)?;
-    let frame = RATE as usize / 50;
-    let mut encoder = OpusEncoder::new(RATE as i32, 1, Application::Audio).map_err(|e| Error::Encode(format!("Opus: {e}")))?;
+    // Opus takes 8 to 48 kHz input, but opus-rs codes CELT only from 24 or
+    // 48: below 24 it is SILK, which even libopus keeps only to a correlation
+    // of about 0.95 with the waveform. So up to 24 kHz (Kokoro's rate, taken
+    // as it is) is encoded from 24, and anything above from 48.
+    let rate = if pcm.rate <= 24_000 { 24_000 } else { RATE };
+    let input = resample(pcm.clone(), rate)?;
+    // 48 kHz samples per input sample: pre-skip and granules count at 48.
+    let scale = RATE / rate;
+    let frame = rate as usize / 50;
+    let mut encoder = OpusEncoder::new(rate as i32, 1, Application::Audio).map_err(|e| Error::Encode(format!("Opus: {e}")))?;
     encoder.bitrate_bps = BITRATE;
 
     // Feed the lookahead's worth of silence past the end, so the last real
     // samples leave the encoder, then round up to whole frames.
     let len = input.samples.len();
     let mut samples: Vec<f32> = input.samples.into_iter().map(|s| s.clamp(-1.0, 1.0)).collect();
-    samples.resize((len + usize::from(PRE_SKIP)).div_ceil(frame) * frame, 0.0);
-    let end = u64::from(PRE_SKIP) + len as u64;
+    samples.resize((len + usize::from(PRE_SKIP) / scale as usize).div_ceil(frame) * frame, 0.0);
+    let end = u64::from(PRE_SKIP) + len as u64 * u64::from(scale);
 
     let mut ogg = ogg::Writer::new(u32::from_le_bytes(*b"loqi"));
     ogg.packet(&opus_head(pcm.rate), 0, true);
@@ -85,7 +91,7 @@ pub(crate) fn encode_ogg(pcm: &Pcm) -> Result<Vec<u8>, Error> {
         let len = encoder.encode(chunk, frame, &mut packet).map_err(|e| Error::Encode(format!("Opus: {e}")))?;
         // A packet's granule is where it ends; the last one ends at the
         // real audio's end, which is how Ogg Opus trims the padding.
-        let granule = (((i + 1) * frame) as u64).min(end);
+        let granule = (((i + 1) * frame) as u64 * u64::from(scale)).min(end);
         ogg.packet(&packet[..len], granule, false);
     }
     Ok(ogg.finish())

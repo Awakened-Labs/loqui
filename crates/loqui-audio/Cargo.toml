@@ -38,7 +38,10 @@ rubato = "5.0.1"
 thiserror = "2"
 # 0.1.36 is the first that checks for FMA before running its FMA kernels
 # (restsend/opus-rs#31); earlier releases crash CPUs with AVX but no FMA.
-opus-rs = "0.1.36"
+# 0.1.37 is the first whose encoder takes 24 kHz input (#37, fixed in 0.1.36)
+# and keeps SILK/hybrid on time below 64 kbps (#38), which speech-rate Opus
+# from Kokoro's 24 kHz relies on.
+opus-rs = "0.1.37"
 
 # MP3 encoding: LAME 3.100 (LGPL), compiled from bundled source with a C
 # compiler and make, linked statically. Only with the `mp3` feature.
