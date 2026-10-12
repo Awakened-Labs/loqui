@@ -223,6 +223,20 @@ mod tests {
     }
 
     #[test]
+    fn decodes_mediumband_silk_as_12_khz_encoders_write_it() {
+        // libopus codes 12 kHz input as mediumband SILK (TOC config 5 here).
+        // opus-rs 0.1.37 and earlier filtered it with the wideband LPC order,
+        // giving noise that starts loud and fades (restsend/opus-rs#53).
+        let pcm = decode(include_bytes!("../tests/data/sine440-mb.ogg"), None).unwrap();
+        assert_is_the_sine(&pcm);
+        let window = 4_800; // 100 ms at 48 kHz
+        for (i, frame) in pcm.samples.chunks_exact(window).enumerate() {
+            let rms = (frame.iter().map(|s| s * s).sum::<f32>() / window as f32).sqrt();
+            assert!((0.06..0.12).contains(&rms), "100 ms window {i} at rms {rms}");
+        }
+    }
+
+    #[test]
     fn decodes_webm_opus_as_browsers_record_it_downmixing_stereo() {
         assert_is_the_sine(&decode(include_bytes!("../tests/data/sine440-stereo.webm"), None).unwrap());
     }
@@ -243,7 +257,11 @@ mod tests {
     #[test]
     fn opus_drops_encoder_priming_and_padding_exactly_as_libopus_does() {
         // libopus (through ffmpeg) decodes every fixture to 24,000 samples.
-        for bytes in [&include_bytes!("../tests/data/sine440-mono.ogg")[..], &include_bytes!("../tests/data/sine440-silk40ms.ogg")[..]] {
+        for bytes in [
+            &include_bytes!("../tests/data/sine440-mono.ogg")[..],
+            &include_bytes!("../tests/data/sine440-silk40ms.ogg")[..],
+            &include_bytes!("../tests/data/sine440-mb.ogg")[..],
+        ] {
             assert_eq!(decode(bytes, None).unwrap().samples.len(), 24_000);
         }
         // WebM's end padding (DiscardPadding, 648 samples here) is parsed by
