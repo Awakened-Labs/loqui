@@ -7,8 +7,22 @@ break the API.
 
 ## [Unreleased]
 
+### Added
+
+- `--threads N`, or `LOQUI_THREADS`, sets the CPU threads of every model a
+  command runs: Kokoro, the speaker model and Whisper. Unset or 0 keeps the
+  default. Each model runs one request at a time, so `loqui serve --threads N`
+  runs at most 2N threads, even with a speech request and a transcription
+  under way together. That leaves CPUs to other work on a host with no
+  affinity or quota limit, and lets a container set the count from its
+  environment.
+- `SttConfig::threads`: Whisper's threads for every transcription that leaves
+  `TranscribeRequest::threads` unset or 0.
+
 ### Changed
 
+- **Breaking:** `SttConfig` has a `threads` field. A struct literal needs
+  `threads: None`, or `..SttConfig::default()`.
 - Opus speech is encoded from Kokoro's 24 kHz at 24 kbps, instead of being
   resampled to 48 kHz and encoded at 64 kbps. That is about 3 KB a second
   instead of 8, with one resample fewer per response. Other rates go up to

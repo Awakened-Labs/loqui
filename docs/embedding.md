@@ -97,7 +97,8 @@ milliseconds to several seconds, so in async code run it under
 executor. Each model runs one inference at a time. If your callers can
 queue work, bound that queue: the server allows 8 waiting requests per model,
 then answers 503. `TtsConfig::threads`, `SpeakerConfig::threads` and
-`TranscribeRequest::threads` cap the CPU threads each model uses. By default
+`SttConfig::threads` cap the CPU threads each model uses, and
+`TranscribeRequest::threads` overrides Whisper's for one request. By default
 ONNX Runtime takes one per CPU the process may use, and whisper.cpp four, or
 fewer when the process may use fewer. Both count the affinity mask (`taskset`,
 systemd's `CPUAffinity`), a cpuset and a CPU quota, so an engine in a

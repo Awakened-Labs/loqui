@@ -158,6 +158,10 @@ pub struct SttConfig {
     /// A name from [`WHISPER_MODELS`], e.g. `"large-v3-turbo"`.
     pub model: String,
     pub device: loqui_whisper::Device,
+    /// CPU threads for whisper.cpp, in every transcription whose
+    /// [`TranscribeRequest::threads`] is unset or 0; `None` means its default
+    /// of four, or fewer when this process may use fewer CPUs.
+    pub threads: Option<u16>,
     /// Unload after this long unused; `None` keeps it resident. Whisper
     /// large is 1.6 GB, so the default frees it after ten idle minutes.
     pub idle_ttl: Option<Duration>,
@@ -166,7 +170,7 @@ pub struct SttConfig {
 #[cfg(feature = "whisper")]
 impl Default for SttConfig {
     fn default() -> Self {
-        Self { model: "large-v3-turbo".into(), device: loqui_whisper::Device::Cpu, idle_ttl: Some(Duration::from_secs(600)) }
+        Self { model: "large-v3-turbo".into(), device: loqui_whisper::Device::Cpu, threads: None, idle_ttl: Some(Duration::from_secs(600)) }
     }
 }
 
@@ -276,6 +280,8 @@ impl EngineBuilder {
         #[cfg(not(feature = "whisper"))]
         let stt_model = None;
         #[cfg(feature = "whisper")]
+        let stt_threads = self.stt.as_ref().and_then(|cfg| cfg.threads);
+        #[cfg(feature = "whisper")]
         let stt = self.stt.map(|cfg| {
             let cache = cache.clone();
             let ttl = cfg.idle_ttl;
@@ -295,6 +301,8 @@ impl EngineBuilder {
             #[cfg(feature = "whisper")]
             stt,
             stt_model,
+            #[cfg(feature = "whisper")]
+            stt_threads,
             speaker,
             names,
             max_input_chars: self.max_input_chars,
@@ -319,6 +327,9 @@ struct Inner {
     #[cfg(feature = "whisper")]
     stt: Option<Slot<loqui_whisper::Whisper>>,
     stt_model: Option<String>,
+    /// [`SttConfig::threads`], for requests that leave theirs unset.
+    #[cfg(feature = "whisper")]
+    stt_threads: Option<u16>,
     speaker: Option<Slot<loqui_speaker::SpeakerEncoder>>,
     names: BTreeMap<String, Named>,
     max_input_chars: usize,
@@ -533,8 +544,9 @@ pub struct TranscribeRequest {
     pub prompt: Option<String>,
     pub task: Task,
     pub temperature: f32,
-    /// CPU threads for whisper.cpp; `None` means its default of four, or
-    /// fewer when this process may use fewer CPUs.
+    /// CPU threads for whisper.cpp; `None` (or 0) means the engine's
+    /// [`SttConfig::threads`], else whisper.cpp's default of four, or fewer
+    /// when this process may use fewer CPUs.
     pub threads: Option<u16>,
 }
 
@@ -819,10 +831,17 @@ impl Engine {
             prompt: request.prompt.clone(),
             task: request.task,
             temperature: request.temperature,
-            threads: request.threads,
+            threads: whisper_threads(request.threads, self.inner.stt_threads),
         };
         Ok(whisper.transcribe(&pcm.samples, &options)?)
     }
+}
+
+/// Whisper's threads for one request: the request's count if above 0, else
+/// the engine's. `None` leaves loqui-whisper's default.
+#[cfg(feature = "whisper")]
+fn whisper_threads(request: Option<u16>, engine: Option<u16>) -> Option<u16> {
+    request.filter(|&t| t > 0).or(engine)
 }
 
 #[cfg(test)]
@@ -969,6 +988,15 @@ mod tests {
         let engine = Engine::builder().cache_dir(&cache).tts(None).stt(Some(stt)).build().unwrap();
         let files: Vec<_> = engine.missing().into_iter().map(|f| (f.kind, f.repo, f.file, f.bytes)).collect();
         assert_eq!(files, [(ModelKind::Stt, models::WHISPER_REPO.repo, "ggml-tiny.en.bin".to_owned(), 77_704_715)]);
+    }
+
+    #[cfg(feature = "whisper")]
+    #[test]
+    fn a_requests_threads_beat_the_engines() {
+        assert_eq!(whisper_threads(Some(2), Some(6)), Some(2));
+        assert_eq!(whisper_threads(Some(0), Some(6)), Some(6), "0 is unset, as everywhere else");
+        assert_eq!(whisper_threads(None, Some(6)), Some(6));
+        assert_eq!(whisper_threads(None, None), None, "loqui-whisper's default");
     }
 
     #[cfg(feature = "whisper")]
