@@ -28,6 +28,11 @@ break the API.
   overlapping the right one. That hit Whisper input not already at 16 kHz,
   voice-match targets and candidates, and Opus output. loqui-audio now
   requires rubato 5.0.1 (HEnquist/rubato#142).
+- Opus uploads in mediumband (12 kHz) SILK, which is how libopus codes 12
+  kHz input, decode to their audio. They decoded to noise that started loud
+  and faded, transcribed as if it were speech, with no error. loqui-audio
+  now requires opus-rs 0.1.38, the first release that decodes them with
+  their own LPC order (restsend/opus-rs#53).
 
 ### Deprecated
 
