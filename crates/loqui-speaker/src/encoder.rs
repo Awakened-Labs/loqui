@@ -6,8 +6,10 @@
 //! own metadata says how it wants its input, and [`SpeakerEncoder::load`]
 //! checks it rather than trusting a file name.
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Mutex;
+use std::thread::available_parallelism;
 
 use ort::session::Session;
 use ort::session::builder::GraphOptimizationLevel;
@@ -36,7 +38,8 @@ impl std::fmt::Debug for SpeakerEncoder {
 
 impl SpeakerEncoder {
     /// Loads an ONNX speaker model. `threads` caps intra-op parallelism;
-    /// `None` lets ONNX Runtime decide.
+    /// `None` (or 0) means one thread per CPU this process may use, counting
+    /// its affinity mask, cpuset and CPU quota.
     ///
     /// The model must declare a 16 kHz sample rate and samples on the 16-bit
     /// scale (`normalize_samples = 0`), the features this crate computes; one
@@ -46,9 +49,10 @@ impl SpeakerEncoder {
         let ort_err = |e: ort::Error| Error::Model(e.to_string());
         let mut builder = Session::builder().map_err(ort_err)?;
         builder = builder.with_optimization_level(GraphOptimizationLevel::Level3).map_err(|e| Error::Model(e.to_string()))?;
-        if let Some(n) = threads {
-            builder = builder.with_intra_threads(n).map_err(|e| Error::Model(e.to_string()))?;
-        }
+        // Always a count: ONNX Runtime's default is a thread per core of the
+        // machine, each pinned to its core, outside any affinity limit.
+        let threads = threads.filter(|&n| n > 0).unwrap_or_else(|| available_parallelism().map_or(1, NonZeroUsize::get));
+        builder = builder.with_intra_threads(threads).map_err(|e| Error::Model(e.to_string()))?;
         let session = builder.commit_from_file(path).map_err(ort_err)?;
         let dim = {
             let meta = session.metadata().map_err(ort_err)?;

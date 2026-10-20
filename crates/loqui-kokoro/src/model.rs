@@ -6,8 +6,10 @@
 //! (f32 `[1, 256]`) and `speed` (f32 `[1]`); output `waveform`.
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
+use std::thread::available_parallelism;
 
 use ort::session::Session;
 use ort::session::builder::GraphOptimizationLevel;
@@ -52,14 +54,16 @@ impl std::fmt::Debug for KokoroModel {
 
 impl KokoroModel {
     /// Loads an ONNX file. `threads` caps intra-op parallelism on the CPU;
-    /// `None` lets ONNX Runtime decide.
+    /// `None` (or 0) means one thread per CPU this process may use, counting
+    /// its affinity mask, cpuset and CPU quota.
     pub fn load(path: &Path, device: Device, threads: Option<usize>) -> Result<Self, Error> {
         let ort_err = |e: ort::Error| Error::Model(e.to_string());
         let mut builder = Session::builder().map_err(ort_err)?;
         builder = builder.with_optimization_level(GraphOptimizationLevel::Level3).map_err(|e| Error::Model(e.to_string()))?;
-        if let Some(n) = threads {
-            builder = builder.with_intra_threads(n).map_err(|e| Error::Model(e.to_string()))?;
-        }
+        // Always a count: ONNX Runtime's default is a thread per core of the
+        // machine, each pinned to its core, outside any affinity limit.
+        let threads = threads.filter(|&n| n > 0).unwrap_or_else(|| available_parallelism().map_or(1, NonZeroUsize::get));
+        builder = builder.with_intra_threads(threads).map_err(|e| Error::Model(e.to_string()))?;
         match device {
             Device::Cpu => {}
             #[cfg(feature = "cuda")]

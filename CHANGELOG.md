@@ -33,6 +33,17 @@ break the API.
   and faded, transcribed as if it were speech, with no error. loqui-audio
   now requires opus-rs 0.1.38, the first release that decodes them with
   their own LPC order (restsend/opus-rs#53).
+- With `threads` unset, Kokoro and the speaker model run one ONNX Runtime
+  thread per CPU the process may use, counting its affinity mask, cpuset and
+  CPU quota. ONNX Runtime's own default was one thread per core of the
+  machine, each pinned to its core. Under `taskset` or systemd's
+  `CPUAffinity`, those threads ran outside the limit. Under a cpuset (such as
+  `docker --cpuset-cpus`), every pin failed with a `pthread_setaffinity_np`
+  error on stderr. Whisper's default of four threads is now capped at the
+  same CPUs rather than the machine's. Limited to one core's two
+  hyperthreads, tiny.en transcribed a 12.6 s clip in 7 s instead of 152.
+  `loqui serve`, which leaves `threads` unset, gets this with no flag.
+  `Some(0)` now means the same as `None` for every model.
 
 ### Deprecated
 

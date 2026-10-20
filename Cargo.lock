@@ -1107,6 +1107,7 @@ dependencies = [
  "loqui-kokoro",
  "loqui-speaker",
  "loqui-whisper",
+ "rustix",
  "sha2",
  "thiserror",
  "tracing",

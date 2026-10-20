@@ -8,14 +8,19 @@
 //! Weights are GGML files such as `ggml-large-v3-turbo.bin` from
 //! `ggerganov/whisper.cpp`; they are not bundled.
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Mutex;
+use std::thread::available_parallelism;
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState};
 
 /// whisper.cpp timestamps are in hundredths of a second.
 const TIMESTAMP_UNIT_SECS: f64 = 0.01;
 const SAMPLE_RATE: f64 = 16_000.0;
+/// whisper.cpp's own default thread count, which it caps at the machine's
+/// CPUs rather than the ones this process may use.
+const DEFAULT_THREADS: usize = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -54,7 +59,9 @@ pub struct Options {
     pub task: Task,
     /// 0 decodes deterministically, which is open-speech's default.
     pub temperature: f32,
-    /// CPU threads; `None` lets whisper.cpp choose.
+    /// CPU threads; `None` (or 0) means whisper.cpp's four, or fewer when
+    /// this process may use fewer CPUs (its affinity mask, cpuset or CPU
+    /// quota).
     pub threads: Option<u16>,
 }
 
@@ -138,9 +145,7 @@ impl Whisper {
         if let Some(prompt) = options.prompt.as_deref().filter(|p| !p.is_empty()) {
             params.set_initial_prompt(prompt);
         }
-        if let Some(threads) = options.threads.filter(|t| *t > 0) {
-            params.set_n_threads(i32::from(threads));
-        }
+        params.set_n_threads(n_threads(options.threads, available_parallelism().map_or(1, NonZeroUsize::get)));
         params.set_print_special(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);
@@ -167,5 +172,28 @@ impl Whisper {
             None => detected,
         };
         Ok(Transcription { text: text.trim().to_owned(), language, duration: samples.len() as f64 / SAMPLE_RATE, segments })
+    }
+}
+
+/// The threads for one transcription: as many as asked for, else
+/// whisper.cpp's default counted over the `cpus` this process may use.
+fn n_threads(requested: Option<u16>, cpus: usize) -> i32 {
+    match requested.filter(|&t| t > 0) {
+        Some(t) => i32::from(t),
+        None => DEFAULT_THREADS.min(cpus) as i32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn threads_default_to_whisper_cpps_four_within_the_cpus_allowed() {
+        assert_eq!(n_threads(None, 16), 4);
+        assert_eq!(n_threads(None, 2), 2, "two CPUs, as under a cpuset or --cpus=2");
+        assert_eq!(n_threads(None, 1), 1);
+        assert_eq!(n_threads(Some(0), 2), 2, "0 is the default, as before");
+        assert_eq!(n_threads(Some(8), 2), 8, "an explicit count is the caller's to choose");
     }
 }
