@@ -107,6 +107,10 @@ struct EngineArgs {
     /// Run models on a GPU: cuda or cuda:N. Needs a `cuda` build.
     #[arg(long)]
     gpu: Option<String>,
+    /// CPU threads for each model; 0 means the default [default: one per CPU
+    /// this process may use, at most 4 for Whisper].
+    #[arg(long, env = "LOQUI_THREADS")]
+    threads: Option<u16>,
     /// Whisper model for transcription (large-v3-turbo, small.en, ...).
     #[cfg(feature = "whisper")]
     #[arg(long, default_value = "large-v3-turbo")]
@@ -124,6 +128,34 @@ struct EngineArgs {
     preload: bool,
     #[command(flatten)]
     voices: VoicesFile,
+}
+
+impl EngineArgs {
+    /// Kokoro's settings.
+    fn tts(&self, gpu: Option<i32>) -> TtsConfig {
+        TtsConfig {
+            variant: self.kokoro,
+            device: gpu.map_or(loqui_kokoro::Device::Cpu, loqui_kokoro::Device::Cuda),
+            threads: self.threads.map(usize::from),
+            ..TtsConfig::default()
+        }
+    }
+
+    /// The speaker model's settings.
+    fn speaker(&self) -> loqui::SpeakerConfig {
+        loqui::SpeakerConfig { threads: self.threads.map(usize::from), ..loqui::SpeakerConfig::default() }
+    }
+
+    /// Whisper's settings.
+    #[cfg(feature = "whisper")]
+    fn stt(&self, gpu: Option<i32>) -> loqui::SttConfig {
+        loqui::SttConfig {
+            model: self.stt_model.clone(),
+            device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
+            threads: self.threads,
+            idle_ttl: (self.stt_idle_secs > 0).then(|| std::time::Duration::from_secs(self.stt_idle_secs)),
+        }
+    }
 }
 
 #[derive(Args, Clone)]
@@ -264,11 +296,7 @@ fn build_engine(args: &EngineArgs, needs: Needs, max_input_chars: usize, max_aud
         .max_input_chars(max_input_chars)
         .max_audio_secs(max_audio_secs)
         .preload(args.preload)
-        .tts(Some(TtsConfig {
-            variant: args.kokoro,
-            device: gpu.map_or(loqui_kokoro::Device::Cpu, loqui_kokoro::Device::Cuda),
-            ..TtsConfig::default()
-        }));
+        .tts(Some(args.tts(gpu)));
     if let Some(dir) = &args.cache_dir {
         builder = builder.cache_dir(dir);
     }
@@ -276,15 +304,11 @@ fn build_engine(args: &EngineArgs, needs: Needs, max_input_chars: usize, max_aud
         builder = builder.voice(name, spec);
     }
     if needs.speaker {
-        builder = builder.speaker(Some(loqui::SpeakerConfig::default()));
+        builder = builder.speaker(Some(args.speaker()));
     }
     #[cfg(feature = "whisper")]
     if needs.stt && !args.no_stt {
-        builder = builder.stt(Some(loqui::SttConfig {
-            model: args.stt_model.clone(),
-            device: gpu.map_or(loqui::SttDevice::Cpu, loqui::SttDevice::Gpu),
-            idle_ttl: (args.stt_idle_secs > 0).then(|| std::time::Duration::from_secs(args.stt_idle_secs)),
-        }));
+        builder = builder.stt(Some(args.stt(gpu)));
     }
     #[cfg(not(feature = "whisper"))]
     let _ = needs.stt;
@@ -589,6 +613,54 @@ mod tests {
     fn the_command_line_is_well_formed() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    /// Every command that runs a model, with the arguments it requires.
+    fn engine_commands() -> Vec<Vec<&'static str>> {
+        let mut commands = vec![vec!["serve"], vec!["doctor"], vec!["speak", "hi"], vec!["match", "a.wav"], vec!["fetch"]];
+        #[cfg(feature = "whisper")]
+        commands.push(vec!["transcribe", "a.wav"]);
+        commands
+    }
+
+    fn engine_args(command: Command) -> EngineArgs {
+        match command {
+            Command::Serve(args) | Command::Doctor(args) => args.engine,
+            Command::Speak(args) => args.engine,
+            #[cfg(feature = "whisper")]
+            Command::Transcribe(args) => args.engine,
+            Command::Match(args) => args.engine,
+            Command::Fetch(args) => args,
+            Command::Token { .. } | Command::Voices(_) => panic!("this command runs no model"),
+        }
+    }
+
+    #[test]
+    fn every_command_that_runs_a_model_takes_threads() {
+        for command in engine_commands() {
+            let argv = ["loqui"].into_iter().chain(command.iter().copied()).chain(["--threads", "3"]);
+            let args = engine_args(Cli::try_parse_from(argv).unwrap_or_else(|e| panic!("{command:?}: {e}")).command);
+            assert_eq!(args.tts(None).threads, Some(3), "{command:?}");
+            assert_eq!(args.speaker().threads, Some(3), "{command:?}");
+            #[cfg(feature = "whisper")]
+            assert_eq!(args.stt(None).threads, Some(3), "{command:?}");
+        }
+    }
+
+    /// Setting the variable would race the other tests (and `set_var` is
+    /// unsafe), so this checks that clap reads it, and that nothing replaces
+    /// an unset count with one of its own.
+    #[test]
+    fn threads_come_from_loqui_threads_and_default_to_unset() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        for command in engine_commands() {
+            let name = command[0];
+            let threads = cli.find_subcommand(name).and_then(|c| c.get_arguments().find(|a| a.get_id() == "threads"));
+            let threads = threads.unwrap_or_else(|| panic!("{name} has no --threads"));
+            assert_eq!(threads.get_env(), Some(std::ffi::OsStr::new("LOQUI_THREADS")), "{name}");
+            assert!(threads.get_default_values().is_empty(), "{name}");
+        }
     }
 
     #[test]
