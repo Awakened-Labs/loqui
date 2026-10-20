@@ -96,8 +96,12 @@ milliseconds to several seconds, so in async code run it under
 `tokio::task::spawn_blocking` (or your runtime's equivalent), never on the
 executor. Each model runs one inference at a time. If your callers can
 queue work, bound that queue: the server allows 8 waiting requests per model,
-then answers 503. `TtsConfig::threads` and `TranscribeRequest::threads` cap the
-CPU threads each model uses; by default the runtimes choose.
+then answers 503. `TtsConfig::threads`, `SpeakerConfig::threads` and
+`TranscribeRequest::threads` cap the CPU threads each model uses. By default
+ONNX Runtime takes one per CPU the process may use, and whisper.cpp four, or
+fewer when the process may use fewer. Both count the affinity mask (`taskset`,
+systemd's `CPUAffinity`), a cpuset and a CPU quota, so an engine in a
+container is sized to the container, not to the host.
 
 **Memory.** Kokoro is about 330 MB and stays resident unless you give
 `TtsConfig::idle_ttl`. Whisper large-v3-turbo is about 1.6 GB, and by

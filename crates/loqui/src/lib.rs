@@ -124,7 +124,8 @@ pub use loqui_kokoro::Device as TtsDevice;
 pub struct TtsConfig {
     pub variant: KokoroVariant,
     pub device: TtsDevice,
-    /// CPU threads for ONNX Runtime; `None` lets it choose.
+    /// CPU threads for ONNX Runtime; `None` means one per CPU this process
+    /// may use, counting its affinity mask, cpuset and CPU quota.
     pub threads: Option<usize>,
     pub fallback: OovFallback,
     /// Unload after this long unused; `None` keeps the model resident.
@@ -142,7 +143,8 @@ impl Default for TtsConfig {
 /// [`Engine::match_voice`].
 #[derive(Debug, Clone, Default)]
 pub struct SpeakerConfig {
-    /// CPU threads for ONNX Runtime; `None` lets it choose.
+    /// CPU threads for ONNX Runtime; `None` means one per CPU this process
+    /// may use, counting its affinity mask, cpuset and CPU quota.
     pub threads: Option<usize>,
     /// Unload after this long unused; `None` keeps the model (26 MB)
     /// resident.
@@ -531,7 +533,8 @@ pub struct TranscribeRequest {
     pub prompt: Option<String>,
     pub task: Task,
     pub temperature: f32,
-    /// CPU threads for whisper.cpp; `None` lets it choose.
+    /// CPU threads for whisper.cpp; `None` means its default of four, or
+    /// fewer when this process may use fewer CPUs.
     pub threads: Option<u16>,
 }
 

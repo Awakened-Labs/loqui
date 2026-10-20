@@ -54,3 +54,8 @@ whisper-cuda = ["whisper", "loqui-whisper/cuda"]
 # Does nothing, like loqui-audio's `unguarded-opus`; goes in the next
 # breaking release.
 unguarded-opus = ["loqui-audio/unguarded-opus"]
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Limits a test thread to some CPUs and reads other threads' CPUs
+# (tests/threads.rs), without `unsafe`.
+rustix = { version = "1", features = ["thread"] }
