@@ -5,7 +5,12 @@ All notable changes to loqui are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); before 1.0, a minor version may
 break the API.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-20
+
+CPU threads: every model's threads can be set with `--threads` or
+`LOQUI_THREADS`, and by default they fit the CPUs the process may use. Opus
+speech is less than half the size, and audio fixes cover CPUs without FMA,
+the start of resampled audio, and mediumband Opus uploads.
 
 ### Added
 
