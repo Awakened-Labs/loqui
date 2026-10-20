@@ -1418,9 +1418,9 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "opus-rs"
-version = "0.1.37"
+version = "0.1.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1880f411a21320dcb546c8f38f05ffb75643362ee0235437487999ed543e26ae"
+checksum = "c87304b9be07d7e4c9c24781fa07ff3e0b02fdc3045f07e7a4e4b0ffe24d95c3"
 
 [[package]]
 name = "ort"

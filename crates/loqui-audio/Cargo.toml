@@ -40,8 +40,9 @@ thiserror = "2"
 # (restsend/opus-rs#31); earlier releases crash CPUs with AVX but no FMA.
 # 0.1.37 is the first whose encoder takes 24 kHz input (#37, fixed in 0.1.36)
 # and keeps SILK/hybrid on time below 64 kbps (#38), which speech-rate Opus
-# from Kokoro's 24 kHz relies on.
-opus-rs = "0.1.37"
+# from Kokoro's 24 kHz relies on. 0.1.38 is the first that decodes
+# mediumband (12 kHz) SILK with its own LPC order (restsend/opus-rs#53).
+opus-rs = "0.1.38"
 
 # MP3 encoding: LAME 3.100 (LGPL), compiled from bundled source with a C
 # compiler and make, linked statically. Only with the `mp3` feature.

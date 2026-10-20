@@ -226,7 +226,8 @@ mod tests {
     fn decodes_mediumband_silk_as_12_khz_encoders_write_it() {
         // libopus codes 12 kHz input as mediumband SILK (TOC config 5 here).
         // opus-rs 0.1.37 and earlier filtered it with the wideband LPC order,
-        // giving noise that starts loud and fades (restsend/opus-rs#53).
+        // giving noise that starts loud and fades; 0.1.38 fixed it
+        // (restsend/opus-rs#53).
         let pcm = decode(include_bytes!("../tests/data/sine440-mb.ogg"), None).unwrap();
         assert_is_the_sine(&pcm);
         let window = 4_800; // 100 ms at 48 kHz

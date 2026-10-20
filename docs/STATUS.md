@@ -40,9 +40,6 @@ Whisper but cannot run Kokoro on the GPU. The image is 3.3 GB (open-speech:
   (restsend/opus-rs#54). At 24 kbps the quantization noise is louder than
   that ceiling, so it costs nothing today. A higher bitrate would need the
   fix, or encoding from 48 kHz.
-- Opus uploads in mediumband (12 kHz) SILK decode to garbage: opus-rs's SILK
-  decoder uses the wideband LPC order there (restsend/opus-rs#53, issue #11).
-  Common voice-note encoders record at 16 or 48 kHz.
 - WebM/Opus keeps up to 13.5 ms of trailing padding: symphonia 0.6 parses
   `DiscardPadding` but does not pass it on. Ogg is trimmed exactly.
 - CI does not build the `cuda` feature (no toolkit on hosted runners); the
