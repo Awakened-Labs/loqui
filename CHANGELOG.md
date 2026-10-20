@@ -34,6 +34,16 @@ break the API.
 - The `unguarded-opus` feature does nothing now. Remove it from your
   manifest: it goes in the next breaking release.
 
+### Security
+
+- The lockfile takes rustls 0.23.46 (RUSTSEC-2026-0346 to 0349), so
+  `--locked` builds and the CUDA image no longer ship a flagged release.
+  loqui was not open to three of them: its rustls has only the ring
+  provider, which offers no post-quantum key exchange (0349) and no ECH
+  (0347), and certificate compression is off (0348). The fourth (0346) puts
+  secrets in the `Debug` output of client session state, which loqui never
+  formats.
+
 ## [0.3.0] - 2026-10-04
 
 Voice matching: the blend of the stock voices that sounds most like a
